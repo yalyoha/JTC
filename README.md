@@ -20,8 +20,8 @@ dotnet run --project src/TClient
 
 For a distributable single-file `.exe`:
 ```powershell
-dotnet publish src/TClient -c Release -r win-x64 --self-contained
-# output at src/TClient/bin/Release/net10.0-windows.../publish/TClient.exe
+dotnet publish src/TClient -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+# output at src/TClient/bin/Release/net10.0-windows.../win-x64/publish/TClient.exe
 ```
 
 No `.msix` is produced — this is intentional.
