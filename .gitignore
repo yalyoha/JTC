@@ -1,0 +1,21 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+
+# Rider / VS Code
+.idea/
+.vscode/
+
+# Publish output
+publish/
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Local runtime data (in case someone ever runs it from repo root)
+LocalAppData/
+*.log
