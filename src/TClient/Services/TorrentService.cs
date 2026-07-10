@@ -25,6 +25,19 @@ public sealed class TorrentService : IAsyncDisposable
         }.ToSettings());
     }
 
+    public async Task<TorrentManager> AddTorrentFileAsync(string torrentPath, string downloadDir, bool startImmediately)
+    {
+        if (!File.Exists(torrentPath))
+            throw new FileNotFoundException("Torrent file not found", torrentPath);
+        Directory.CreateDirectory(downloadDir);
+
+        var manager = await _engine.AddAsync(torrentPath, downloadDir);
+        TorrentAdded?.Invoke(this, manager);
+        if (startImmediately)
+            await manager.StartAsync();
+        return manager;
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
