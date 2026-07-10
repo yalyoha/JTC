@@ -60,8 +60,42 @@ public sealed partial class MainWindow : Window
 
     private async void AddMagnetButton_Click(object sender, RoutedEventArgs e)
     {
-        // Real magnet dialog comes in Task 16 — for now, no-op.
-        await ShowErrorAsync("Not implemented yet", "Magnet input dialog is added in the next task.");
+        var input = new Microsoft.UI.Xaml.Controls.TextBox
+        {
+            PlaceholderText = "magnet:?xt=urn:btih:...",
+            AcceptsReturn = false,
+        };
+        var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
+        {
+            Title = "Add magnet link",
+            Content = input,
+            PrimaryButtonText = "Add",
+            CloseButtonText = "Cancel",
+            DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Primary,
+            XamlRoot = Content.XamlRoot,
+        };
+        var result = await dialog.ShowAsync();
+        if (result != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary)
+            return;
+
+        var magnet = input.Text?.Trim();
+        if (string.IsNullOrEmpty(magnet) || !magnet.StartsWith("magnet:"))
+        {
+            await ShowErrorAsync("Invalid magnet", "Text must start with \"magnet:\".");
+            return;
+        }
+
+        var folder = await PickDownloadFolderAsync();
+        if (folder is null) return;
+
+        try
+        {
+            await _service.AddMagnetAsync(magnet, folder.Path, startImmediately: true);
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync("Could not add magnet", ex.Message);
+        }
     }
 
     private async Task<Windows.Storage.StorageFolder?> PickDownloadFolderAsync()
