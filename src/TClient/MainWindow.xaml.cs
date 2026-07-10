@@ -117,4 +117,41 @@ public sealed partial class MainWindow : Window
         };
         await dialog.ShowAsync();
     }
+
+    private async void ResumeButton_Click(object sender, RoutedEventArgs e)
+    {
+        var vm = ViewModel.SelectedTorrent;
+        if (vm is null) return;
+        await _service.ResumeAsync(vm.Manager);
+    }
+
+    private async void PauseButton_Click(object sender, RoutedEventArgs e)
+    {
+        var vm = ViewModel.SelectedTorrent;
+        if (vm is null) return;
+        await _service.PauseAsync(vm.Manager);
+    }
+
+    private async void RemoveButton_Click(object sender, RoutedEventArgs e)
+    {
+        var vm = ViewModel.SelectedTorrent;
+        if (vm is null) return;
+
+        var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
+        {
+            Title = "Remove torrent",
+            Content = $"Also delete downloaded files for “{vm.Name}”?",
+            PrimaryButtonText = "Delete files",
+            SecondaryButtonText = "Keep files",
+            CloseButtonText = "Cancel",
+            DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Secondary,
+            XamlRoot = Content.XamlRoot,
+        };
+        var result = await dialog.ShowAsync();
+        if (result == Microsoft.UI.Xaml.Controls.ContentDialogResult.None)
+            return; // Cancel
+
+        var deleteFiles = result == Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary;
+        await _service.RemoveAsync(vm.Manager, deleteFiles);
+    }
 }
