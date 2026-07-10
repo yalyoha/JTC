@@ -6,7 +6,7 @@ public enum PersistedSourceKind
     Magnet,
 }
 
-public sealed class PersistedTorrent
+public sealed record PersistedTorrent
 {
     public string Source { get; init; } = "";
     public PersistedSourceKind SourceKind { get; init; }

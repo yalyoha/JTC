@@ -7,6 +7,7 @@ public sealed class TorrentService : IAsyncDisposable
 {
     private readonly ClientEngine _engine;
     private readonly StateStore _store;
+    private readonly Dictionary<TorrentManager, PersistedTorrent> _persistedByManager = new();
     private bool _disposed;
 
     public event EventHandler<TorrentManager>? TorrentAdded;
@@ -32,9 +33,17 @@ public sealed class TorrentService : IAsyncDisposable
         Directory.CreateDirectory(downloadDir);
 
         var manager = await _engine.AddAsync(torrentPath, downloadDir);
+        _persistedByManager[manager] = new PersistedTorrent
+        {
+            Source = torrentPath,
+            SourceKind = PersistedSourceKind.TorrentFile,
+            DownloadDir = downloadDir,
+            Paused = !startImmediately,
+        };
         TorrentAdded?.Invoke(this, manager);
         if (startImmediately)
             await manager.StartAsync();
+        await SaveStateAsync();
         return manager;
     }
 
@@ -45,15 +54,35 @@ public sealed class TorrentService : IAsyncDisposable
         Directory.CreateDirectory(downloadDir);
 
         var manager = await _engine.AddAsync(link, downloadDir);
+        _persistedByManager[manager] = new PersistedTorrent
+        {
+            Source = magnetUri,
+            SourceKind = PersistedSourceKind.Magnet,
+            DownloadDir = downloadDir,
+            Paused = !startImmediately,
+        };
         TorrentAdded?.Invoke(this, manager);
         if (startImmediately)
             await manager.StartAsync();
+        await SaveStateAsync();
         return manager;
     }
 
-    public Task PauseAsync(TorrentManager manager) => manager.PauseAsync();
+    public async Task PauseAsync(TorrentManager manager)
+    {
+        await manager.PauseAsync();
+        if (_persistedByManager.TryGetValue(manager, out var entry))
+            _persistedByManager[manager] = entry with { Paused = true };
+        await SaveStateAsync();
+    }
 
-    public Task ResumeAsync(TorrentManager manager) => manager.StartAsync();
+    public async Task ResumeAsync(TorrentManager manager)
+    {
+        await manager.StartAsync();
+        if (_persistedByManager.TryGetValue(manager, out var entry))
+            _persistedByManager[manager] = entry with { Paused = false };
+        await SaveStateAsync();
+    }
 
     public async Task RemoveAsync(TorrentManager manager, bool deleteFilesOnDisk)
     {
@@ -62,7 +91,9 @@ public sealed class TorrentService : IAsyncDisposable
 
         await manager.StopAsync();
         await _engine.RemoveAsync(manager);
+        _persistedByManager.Remove(manager);
         TorrentRemoved?.Invoke(this, manager);
+        await SaveStateAsync();
 
         if (deleteFilesOnDisk && !string.IsNullOrEmpty(torrentName))
         {
@@ -82,6 +113,34 @@ public sealed class TorrentService : IAsyncDisposable
             }
         }
     }
+
+    public async Task LoadStateAsync()
+    {
+        var items = await _store.LoadAsync();
+        foreach (var item in items)
+        {
+            try
+            {
+                switch (item.SourceKind)
+                {
+                    case PersistedSourceKind.TorrentFile:
+                        if (File.Exists(item.Source))
+                            await AddTorrentFileAsync(item.Source, item.DownloadDir, startImmediately: !item.Paused);
+                        // Source file gone: silently skip. User can re-add.
+                        break;
+                    case PersistedSourceKind.Magnet:
+                        await AddMagnetAsync(item.Source, item.DownloadDir, startImmediately: !item.Paused);
+                        break;
+                }
+            }
+            catch
+            {
+                // Ignore individual failures; keep loading the rest.
+            }
+        }
+    }
+
+    private Task SaveStateAsync() => _store.SaveAsync(_persistedByManager.Values.ToArray());
 
     public async ValueTask DisposeAsync()
     {
