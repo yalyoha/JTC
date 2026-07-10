@@ -7,6 +7,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TClient", "src\TClient\TClient.csproj", "{FE6079C8-E3CC-494E-A6AD-46831C514481}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{0AB3BF05-4346-4AA6-1389-037BE0695223}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TClient.Tests", "tests\TClient.Tests\TClient.Tests.csproj", "{BCC3BEEC-8DB9-44AC-B58B-CBA2D280C06C}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -29,11 +33,24 @@ Global
 		{FE6079C8-E3CC-494E-A6AD-46831C514481}.Release|x64.Build.0 = Release|x64
 		{FE6079C8-E3CC-494E-A6AD-46831C514481}.Release|x86.ActiveCfg = Release|x64
 		{FE6079C8-E3CC-494E-A6AD-46831C514481}.Release|x86.Build.0 = Release|x64
+		{BCC3BEEC-8DB9-44AC-B58B-CBA2D280C06C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BCC3BEEC-8DB9-44AC-B58B-CBA2D280C06C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BCC3BEEC-8DB9-44AC-B58B-CBA2D280C06C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BCC3BEEC-8DB9-44AC-B58B-CBA2D280C06C}.Debug|x64.Build.0 = Debug|Any CPU
+		{BCC3BEEC-8DB9-44AC-B58B-CBA2D280C06C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BCC3BEEC-8DB9-44AC-B58B-CBA2D280C06C}.Debug|x86.Build.0 = Debug|Any CPU
+		{BCC3BEEC-8DB9-44AC-B58B-CBA2D280C06C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BCC3BEEC-8DB9-44AC-B58B-CBA2D280C06C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BCC3BEEC-8DB9-44AC-B58B-CBA2D280C06C}.Release|x64.ActiveCfg = Release|Any CPU
+		{BCC3BEEC-8DB9-44AC-B58B-CBA2D280C06C}.Release|x64.Build.0 = Release|Any CPU
+		{BCC3BEEC-8DB9-44AC-B58B-CBA2D280C06C}.Release|x86.ActiveCfg = Release|Any CPU
+		{BCC3BEEC-8DB9-44AC-B58B-CBA2D280C06C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{FE6079C8-E3CC-494E-A6AD-46831C514481} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{BCC3BEEC-8DB9-44AC-B58B-CBA2D280C06C} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 	EndGlobalSection
 EndGlobal
