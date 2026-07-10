@@ -1,18 +1,23 @@
 using Microsoft.UI.Xaml;
+using TClient.Services;
 
 namespace TClient;
 
 public partial class App : Application
 {
+    public static TorrentService? Service { get; private set; }
+    private Window? _window;
+
     public App()
     {
         InitializeComponent();
     }
 
-    protected override void OnLaunched(LaunchActivatedEventArgs args)
+    protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
-        // Real MainWindow bootstrap comes in Task 13.
-        // For now just exit — this task only proves the project builds.
-        Exit();
+        Service = new TorrentService();
+        _window = new MainWindow(Service);
+        _window.Activate();
+        await Service.LoadStateAsync();
     }
 }
