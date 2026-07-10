@@ -111,5 +111,22 @@
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>
+
+        <Grid Grid.Row="3" Padding="12,6" Background="{ThemeResource LayerFillColorDefaultBrush}">
+            <StackPanel Orientation="Horizontal" Spacing="18">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE74B;" />
+                    <TextBlock Text="{x:Bind ViewModel.TotalDownloadRateText, Mode=OneWay}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE74A;" />
+                    <TextBlock Text="{x:Bind ViewModel.TotalUploadRateText, Mode=OneWay}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="Peers:" />
+                    <TextBlock Text="{x:Bind ViewModel.TotalPeers, Mode=OneWay}" />
+                </StackPanel>
+            </StackPanel>
+        </Grid>
     </Grid>
 </Window>
