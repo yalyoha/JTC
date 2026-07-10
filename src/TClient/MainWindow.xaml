@@ -6,10 +6,10 @@
     Title="TClient">
     <Grid x:Name="RootGrid" Background="Transparent">
         <Grid.RowDefinitions>
-            <RowDefinition Height="32" />  <!-- title bar -->
-            <RowDefinition Height="Auto" /> <!-- command bar (Task 15) -->
-            <RowDefinition Height="*" />    <!-- list (Task 17) -->
-            <RowDefinition Height="Auto" /> <!-- status bar (Task 18) -->
+            <RowDefinition Height="32" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Grid x:Name="AppTitleBar" Grid.Row="0" Height="32" Background="Transparent">
@@ -22,5 +22,25 @@
                            Style="{ThemeResource CaptionTextBlockStyle}" />
             </StackPanel>
         </Grid>
+
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    Padding="12,8"
+                    Spacing="8">
+            <Button x:Name="OpenTorrentButton"
+                    Click="OpenTorrentButton_Click">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE710;" />
+                    <TextBlock Text="Open .torrent" />
+                </StackPanel>
+            </Button>
+            <Button x:Name="AddMagnetButton"
+                    Click="AddMagnetButton_Click">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                    <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE71B;" />
+                    <TextBlock Text="Add magnet" />
+                </StackPanel>
+            </Button>
+        </StackPanel>
     </Grid>
 </Window>
