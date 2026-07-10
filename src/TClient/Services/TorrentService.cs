@@ -38,6 +38,19 @@ public sealed class TorrentService : IAsyncDisposable
         return manager;
     }
 
+    public async Task<TorrentManager> AddMagnetAsync(string magnetUri, string downloadDir, bool startImmediately)
+    {
+        if (!MagnetLink.TryParse(magnetUri, out var link) || link is null)
+            throw new ArgumentException("Invalid magnet link", nameof(magnetUri));
+        Directory.CreateDirectory(downloadDir);
+
+        var manager = await _engine.AddAsync(link, downloadDir);
+        TorrentAdded?.Invoke(this, manager);
+        if (startImmediately)
+            await manager.StartAsync();
+        return manager;
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
