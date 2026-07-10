@@ -51,6 +51,38 @@ public sealed class TorrentService : IAsyncDisposable
         return manager;
     }
 
+    public Task PauseAsync(TorrentManager manager) => manager.PauseAsync();
+
+    public Task ResumeAsync(TorrentManager manager) => manager.StartAsync();
+
+    public async Task RemoveAsync(TorrentManager manager, bool deleteFilesOnDisk)
+    {
+        var downloadDir = manager.SavePath;
+        var torrentName = manager.Torrent?.Name;
+
+        await manager.StopAsync();
+        await _engine.RemoveAsync(manager);
+        TorrentRemoved?.Invoke(this, manager);
+
+        if (deleteFilesOnDisk && !string.IsNullOrEmpty(torrentName))
+        {
+            // Torrent contents are inside downloadDir. Delete the torrent's files/folder specifically,
+            // never the whole downloadDir (which might contain unrelated files).
+            var target = Path.Combine(downloadDir, torrentName);
+            try
+            {
+                if (Directory.Exists(target))
+                    Directory.Delete(target, recursive: true);
+                else if (File.Exists(target))
+                    File.Delete(target);
+            }
+            catch (IOException)
+            {
+                // File may be held by an antivirus scanner; user can delete manually.
+            }
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (_disposed)
