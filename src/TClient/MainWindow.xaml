@@ -4,5 +4,23 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="TClient">
-    <Grid />
+    <Grid x:Name="RootGrid" Background="Transparent">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="32" />  <!-- title bar -->
+            <RowDefinition Height="Auto" /> <!-- command bar (Task 15) -->
+            <RowDefinition Height="*" />    <!-- list (Task 17) -->
+            <RowDefinition Height="Auto" /> <!-- status bar (Task 18) -->
+        </Grid.RowDefinitions>
+
+        <Grid x:Name="AppTitleBar" Grid.Row="0" Height="32" Background="Transparent">
+            <StackPanel Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Margin="12,0,0,0"
+                        Spacing="8">
+                <TextBlock Text="TClient"
+                           VerticalAlignment="Center"
+                           Style="{ThemeResource CaptionTextBlockStyle}" />
+            </StackPanel>
+        </Grid>
+    </Grid>
 </Window>
