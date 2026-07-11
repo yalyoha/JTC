@@ -11,6 +11,7 @@ obj/
 
 # Publish output
 publish/
+dist/
 
 # Windows
 Thumbs.db

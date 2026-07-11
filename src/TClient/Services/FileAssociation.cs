@@ -1,4 +1,5 @@
 using Microsoft.Win32;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace TClient.Services;
@@ -77,9 +78,23 @@ public static class FileAssociation
 
             if (changed)
             {
-                // Tell Explorer that associations changed so it refreshes icons and menus.
+                // 1) Tell shell subscribers that file associations changed.
                 SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, IntPtr.Zero, IntPtr.Zero);
-                DebugLog.Info("FileAssociation: registry updated, Explorer notified");
+                // 2) SHChangeNotify alone doesn't invalidate Explorer's icon-cache DB, so
+                //    already-visible .torrent files keep their stale thumbnail. `ie4uinit -show`
+                //    is the classic shell-refresh hook that forces Explorer to re-query icons.
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = "ie4uinit.exe",
+                        Arguments = "-show",
+                        UseShellExecute = false,
+                        CreateNoWindow = true,
+                    })?.Dispose();
+                }
+                catch (Exception ex) { DebugLog.Error("ie4uinit -show", ex); }
+                DebugLog.Info("FileAssociation: registry updated, shell refresh triggered");
             }
         }
         catch (Exception ex)
