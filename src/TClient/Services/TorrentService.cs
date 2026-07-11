@@ -5,7 +5,12 @@ namespace TClient.Services;
 
 public sealed class TorrentService : IAsyncDisposable
 {
-    private const int MaxPeerConnections = 200;
+    // Higher than MonoTorrent's default; more peer slots = better download parallelism.
+    // 500 is safe on modern hardware; going higher yields diminishing returns.
+    private const int MaxPeerConnections = 500;
+
+    // Faster ramp-up when adding a torrent — more parallel connection attempts.
+    private const int MaxHalfOpenConnections = 30;
 
     private readonly ClientEngine _engine;
     private readonly StateStore _store;
@@ -29,6 +34,13 @@ public sealed class TorrentService : IAsyncDisposable
         {
             CacheDirectory = AppPaths.CacheDir,
             MaximumConnections = MaxPeerConnections,
+            MaximumHalfOpenConnections = MaxHalfOpenConnections,
+            // Explicitly on (also defaults, but making intent visible):
+            AllowLocalPeerDiscovery = true,      // BEP 14 — LAN peer discovery
+            AllowPortForwarding = true,          // UPnP / NAT-PMP — inbound reachability
+            AutoSaveLoadDhtCache = true,         // remember DHT nodes across restarts
+            AutoSaveLoadFastResume = true,       // skip full re-hash on restart
+            AutoSaveLoadMagnetLinkMetadata = true, // cache magnet metadata
         }.ToSettings());
     }
 
@@ -180,17 +192,9 @@ public sealed class TorrentService : IAsyncDisposable
         catch (Exception ex) { DebugLog.Error("RemoveAsync", ex); throw; }
         finally { _mutation.Release(); DebugLog.Info("  Remove: semaphore released"); }
 
-        if (deleteFilesOnDisk && !string.IsNullOrEmpty(torrentName))
+        if (deleteFilesOnDisk)
         {
-            var target = Path.Combine(downloadDir, torrentName);
-            try
-            {
-                if (Directory.Exists(target))
-                    Directory.Delete(target, recursive: true);
-                else if (File.Exists(target))
-                    File.Delete(target);
-            }
-            catch { /* AV lock or permissions — user can delete manually */ }
+            await DeleteTorrentFilesAsync(manager, downloadDir, torrentName);
         }
 
         // A slot may have just freed up.
@@ -220,6 +224,87 @@ public sealed class TorrentService : IAsyncDisposable
                 // Ignore individual failures; keep loading the rest.
             }
         }
+    }
+
+    /// <summary>
+    /// Deletes the torrent's data files from disk. Uses MonoTorrent's file list to get
+    /// each file's actual path (works for both single- and multi-file torrents), then
+    /// removes any now-empty containing directories. Retries a few times because
+    /// file handles from the piece writer may not be fully released the moment
+    /// engine.RemoveAsync returns.
+    /// </summary>
+    private static async Task DeleteTorrentFilesAsync(TorrentManager manager, string downloadDir, string? torrentName)
+    {
+        // Collect all files' full paths BEFORE we release the manager reference.
+        var filePaths = new List<string>();
+        try
+        {
+            foreach (var f in manager.Files)
+            {
+                if (!string.IsNullOrEmpty(f.FullPath))
+                    filePaths.Add(f.FullPath);
+            }
+        }
+        catch (Exception ex) { DebugLog.Error("collect file paths", ex); }
+
+        // Fallback for magnet torrents whose metadata never resolved (Files is empty):
+        // best guess is downloadDir\torrentName.
+        if (filePaths.Count == 0 && !string.IsNullOrEmpty(torrentName))
+            filePaths.Add(Path.Combine(downloadDir, torrentName));
+
+        DebugLog.Info($"DeleteTorrentFiles: {filePaths.Count} paths to delete");
+
+        // Try each file with a few retries — piece writer may still be flushing.
+        foreach (var path in filePaths)
+            await DeletePathWithRetriesAsync(path);
+
+        // Multi-file torrents put everything in a subfolder <downloadDir>\<torrentName>.
+        // Remove it (and any empty ancestor folders inside downloadDir).
+        if (!string.IsNullOrEmpty(torrentName))
+        {
+            var container = Path.Combine(downloadDir, torrentName);
+            if (Directory.Exists(container))
+            {
+                // Wipe any leftover empty subfolders + the container itself.
+                try { Directory.Delete(container, recursive: true); }
+                catch (Exception ex) { DebugLog.Error($"remove container {container}", ex); }
+            }
+        }
+    }
+
+    private static async Task DeletePathWithRetriesAsync(string path)
+    {
+        // Retry with escalating delays: 0, 200, 400, 800, 1600ms — total ~3s.
+        var delays = new[] { 0, 200, 400, 800, 1600 };
+        foreach (var delay in delays)
+        {
+            if (delay > 0) await Task.Delay(delay);
+            try
+            {
+                if (Directory.Exists(path))
+                {
+                    Directory.Delete(path, recursive: true);
+                    DebugLog.Info($"  deleted dir: {path}");
+                    return;
+                }
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                    DebugLog.Info($"  deleted file: {path}");
+                    return;
+                }
+                // Path doesn't exist — nothing to do.
+                return;
+            }
+            catch (IOException) { /* file may be locked, retry */ }
+            catch (UnauthorizedAccessException) { /* AV or read-only, retry */ }
+            catch (Exception ex)
+            {
+                DebugLog.Error($"delete {path}", ex);
+                return; // unrecoverable, don't retry
+            }
+        }
+        DebugLog.Info($"  gave up deleting: {path}");
     }
 
     private Task SaveStateAsync() => _store.SaveAsync(_persistedByManager.Values.ToArray());

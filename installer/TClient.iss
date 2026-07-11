@@ -1,9 +1,9 @@
 ; Inno Setup script for TClient
 ; Compile with: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\TClient.iss
-; Output: dist\TClient-v0.3.5-setup.exe
+; Output: dist\TClient-v0.3.6-setup.exe
 
 #define MyAppName "TClient"
-#define MyAppVersion "0.3.5"
+#define MyAppVersion "0.3.6"
 #define MyAppPublisher "yalyoha"
 #define MyAppURL "https://github.com/yalyoha/TClient"
 #define MyAppExeName "TClient.exe"
