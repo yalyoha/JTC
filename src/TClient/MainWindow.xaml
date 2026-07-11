@@ -97,9 +97,11 @@
                      hover overlay renders slightly wider than our row Grid and looks weird. -->
                 <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver"          Color="Transparent" />
                 <SolidColorBrush x:Key="ListViewItemBackgroundPressed"              Color="Transparent" />
-                <SolidColorBrush x:Key="ListViewItemBackgroundSelected"             Color="#33FFFFFF" />
-                <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver"  Color="#33FFFFFF" />
-                <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed"      Color="#33FFFFFF" />
+                <!-- Container selection background is off; selection is rendered inside
+                     our row Grid via TorrentViewModel.IsSelected so the shape matches. -->
+                <SolidColorBrush x:Key="ListViewItemBackgroundSelected"             Color="Transparent" />
+                <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver"  Color="Transparent" />
+                <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed"      Color="Transparent" />
             </ListView.Resources>
             <ListView.HeaderTemplate>
                 <DataTemplate>

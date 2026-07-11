@@ -12,14 +12,23 @@ public sealed partial class TorrentViewModel : ObservableObject
 {
     // Cached per-state row-background brushes. All semi-transparent so the gradient
     // window backdrop still shows through — colors sit inside the pink→orange palette
-    // without clashing. Alphas kept low (~15-25%) so the pink upper part of the gradient
-    // doesn't blow rows out to pure white.
-    private static readonly SolidColorBrush BrushSeeding     = new(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF)); // white — done
-    private static readonly SolidColorBrush BrushDownloading = new(Color.FromArgb(0x40, 0xFF, 0xD5, 0x80)); // warm amber — active
-    private static readonly SolidColorBrush BrushChecking    = new(Color.FromArgb(0x40, 0xFF, 0x8A, 0xD5)); // magenta — hashing/metadata
-    private static readonly SolidColorBrush BrushIdle        = new(Color.FromArgb(0x35, 0x30, 0x20, 0x40)); // deep plum — paused/stopped
-    private static readonly SolidColorBrush BrushError       = new(Color.FromArgb(0x50, 0xB0, 0x20, 0x20)); // dark red — error
-    private static readonly SolidColorBrush BrushTransparent = new(Colors.Transparent);
+    // without clashing.
+    //
+    // Two variants per state: normal and "selected". The selected variant has ~2x the
+    // alpha so selection reads clearly, while still keeping the palette. Because our own
+    // Grid draws the background, the highlight matches the row's corner radius exactly
+    // (the container's built-in selection background is turned off in MainWindow.xaml).
+    private static readonly SolidColorBrush BrushSeeding             = new(Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF));
+    private static readonly SolidColorBrush BrushSeedingSelected     = new(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF));
+    private static readonly SolidColorBrush BrushDownloading         = new(Color.FromArgb(0x40, 0xFF, 0xD5, 0x80));
+    private static readonly SolidColorBrush BrushDownloadingSelected = new(Color.FromArgb(0x75, 0xFF, 0xD5, 0x80));
+    private static readonly SolidColorBrush BrushChecking            = new(Color.FromArgb(0x40, 0xFF, 0x8A, 0xD5));
+    private static readonly SolidColorBrush BrushCheckingSelected    = new(Color.FromArgb(0x75, 0xFF, 0x8A, 0xD5));
+    private static readonly SolidColorBrush BrushIdle                = new(Color.FromArgb(0x35, 0x30, 0x20, 0x40));
+    private static readonly SolidColorBrush BrushIdleSelected        = new(Color.FromArgb(0x70, 0x30, 0x20, 0x40));
+    private static readonly SolidColorBrush BrushError               = new(Color.FromArgb(0x50, 0xB0, 0x20, 0x20));
+    private static readonly SolidColorBrush BrushErrorSelected       = new(Color.FromArgb(0x80, 0xB0, 0x20, 0x20));
+    private static readonly SolidColorBrush BrushTransparent         = new(Colors.Transparent);
 
     private readonly DispatcherQueue _dispatcher;
 
@@ -34,7 +43,10 @@ public sealed partial class TorrentViewModel : ObservableObject
     [ObservableProperty] private int _peerCount;
     [ObservableProperty] private string _stateText = "";
     [ObservableProperty] private bool _isPaused;
+    [ObservableProperty] private bool _isSelected;
     [ObservableProperty] private Brush _rowBackground = BrushTransparent;
+
+    partial void OnIsSelectedChanged(bool value) => RowBackground = BrushForState(Manager.State, value);
 
     public TorrentViewModel(TorrentManager manager, DispatcherQueue dispatcher)
     {
@@ -44,7 +56,7 @@ public sealed partial class TorrentViewModel : ObservableObject
         Name = manager.Torrent?.Name ?? "(загрузка метаданных…)";
         SizeText = manager.Torrent is null ? "—" : Formatting.BytesToHuman(manager.Torrent.Size);
         StateText = Formatting.StateToRu(manager.State);
-        RowBackground = BrushForState(manager.State);
+        RowBackground = BrushForState(manager.State, false);
 
         manager.TorrentStateChanged += OnStateChanged;
     }
@@ -69,7 +81,7 @@ public sealed partial class TorrentViewModel : ObservableObject
             ? "Ожидание"
             : Formatting.StateToRu(Manager.State);
         IsPaused = Manager.State is TorrentState.Paused or TorrentState.Stopped;
-        RowBackground = BrushForState(Manager.State);
+        RowBackground = BrushForState(Manager.State, IsSelected);
     }
 
     private void OnStateChanged(object? sender, TorrentStateChangedEventArgs e)
@@ -78,7 +90,7 @@ public sealed partial class TorrentViewModel : ObservableObject
         {
             StateText = Formatting.StateToRu(e.NewState);
             IsPaused = e.NewState is TorrentState.Paused or TorrentState.Stopped;
-            RowBackground = BrushForState(e.NewState);
+            RowBackground = BrushForState(e.NewState, IsSelected);
         });
     }
 
@@ -87,14 +99,14 @@ public sealed partial class TorrentViewModel : ObservableObject
         Manager.TorrentStateChanged -= OnStateChanged;
     }
 
-    private static SolidColorBrush BrushForState(TorrentState state) => state switch
+    private static SolidColorBrush BrushForState(TorrentState state, bool selected) => state switch
     {
-        TorrentState.Seeding                                                => BrushSeeding,
-        TorrentState.Downloading or TorrentState.Starting                   => BrushDownloading,
+        TorrentState.Seeding                                                => selected ? BrushSeedingSelected     : BrushSeeding,
+        TorrentState.Downloading or TorrentState.Starting                   => selected ? BrushDownloadingSelected : BrushDownloading,
         TorrentState.Hashing or TorrentState.HashingPaused
-            or TorrentState.Metadata or TorrentState.FetchingHashes         => BrushChecking,
-        TorrentState.Paused or TorrentState.Stopped or TorrentState.Stopping => BrushIdle,
-        TorrentState.Error                                                  => BrushError,
+            or TorrentState.Metadata or TorrentState.FetchingHashes         => selected ? BrushCheckingSelected    : BrushChecking,
+        TorrentState.Paused or TorrentState.Stopped or TorrentState.Stopping => selected ? BrushIdleSelected        : BrushIdle,
+        TorrentState.Error                                                  => selected ? BrushErrorSelected       : BrushError,
         _                                                                    => BrushTransparent,
     };
 }

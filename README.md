@@ -4,7 +4,11 @@
 Свой pet-проект — только то, что реально нужно, ничего лишнего.
 
 <p align="center">
-  <img src="icon/logo.png" width="128" alt="JTC" />
+  <img src="icon/logo.png" width="96" alt="JTC" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshot.png" width="880" alt="Junior Torrent Client — окно приложения" />
 </p>
 
 ## Что умеет

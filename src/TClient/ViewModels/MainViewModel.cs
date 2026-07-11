@@ -20,6 +20,12 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty] private string _totalUploadRateText = "—";
     [ObservableProperty] private int _totalPeers;
 
+    partial void OnSelectedTorrentChanged(TorrentViewModel? oldValue, TorrentViewModel? newValue)
+    {
+        if (oldValue is not null) oldValue.IsSelected = false;
+        if (newValue is not null) newValue.IsSelected = true;
+    }
+
     public MainViewModel(TorrentService service, DispatcherQueue dispatcher)
     {
         _service = service;
