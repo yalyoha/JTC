@@ -1,0 +1,40 @@
+# Auto-detect text files and normalize to LF in the repo.
+# Checked-out files use each OS's native EOL (CRLF on Windows).
+* text=auto
+
+# Explicit text — C#/XAML/config
+*.cs             text diff=csharp
+*.csproj         text
+*.sln            text
+*.slnx           text
+*.props          text
+*.targets        text
+*.xaml           text
+*.xml            text
+*.manifest       text
+*.json           text
+*.md             text
+*.gitignore      text
+*.gitattributes  text
+*.editorconfig   text
+
+# Scripts
+*.ps1            text
+*.psm1           text
+*.psd1           text
+*.sh             text eol=lf
+*.bat            text eol=crlf
+*.cmd            text eol=crlf
+
+# Binary — never touch line endings
+*.ico            binary
+*.png            binary
+*.jpg            binary
+*.jpeg           binary
+*.gif            binary
+*.pdf            binary
+*.dll            binary
+*.exe            binary
+*.pdb            binary
+*.pfx            binary
+*.snk            binary
