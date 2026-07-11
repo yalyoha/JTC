@@ -1,56 +1,94 @@
 # TClient
 
-Minimal personal-use BitTorrent client for Windows 11.
+Минималистичный BitTorrent-клиент для Windows 11.
+Свой pet-проект — только то, что реально нужно, ничего лишнего.
 
-Built on **WinUI 3** (Windows App SDK, **unpackaged** — no MSIX, no Microsoft Store) and **MonoTorrent**.
+<p align="center">
+  <img src="icon/logo.png" width="128" alt="TClient" />
+</p>
 
-## Build
+## Что умеет
 
-Prerequisites:
-- Windows 10 20H1+ (Windows 11 recommended for the full Fluent look)
-- .NET 10 SDK
-- No Visual Studio required — CLI is enough
+- Скачивание из `.torrent` файлов и magnet-ссылок
+- Список торрентов с прогрессом, скоростями DL/UL, числом пиров и состоянием
+- Пауза, возобновление, удаление (с опцией удалить или оставить файлы)
+- Лимит одновременных закачек — если он достигнут, лишние торренты стоят в очереди и запускаются автоматически, когда предыдущий завершается
+- Ассоциация с `.torrent` файлами в Проводнике: правой кнопкой → **Открыть с помощью → TClient**
+- Single-instance: второй запуск (например, из «Открыть с помощью») не плодит второе окно, а передаёт файл в уже открытое приложение
+- Полностью русский интерфейс
+- Родной вид Windows 11: Fluent-фон Mica, системный акцентный цвет, темы (светлая/тёмная — реагирует автоматически)
+
+## Установка
+
+**Готовый билд** (Release, самодостаточный, без установщика):
 
 ```powershell
-git clone <this repo>
+git clone https://github.com/yalyoha/TClient.git
+cd TClient
+dotnet publish src/TClient -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+```
+
+После этого в `src/TClient/bin/Release/net10.0-windows.../win-x64/publish/` появится `TClient.exe` — переноси куда хочешь и запускай. Никаких `.msi`, `.msix`, установщиков, реестра HKLM или прав администратора не требуется.
+
+**Требования:**
+- Windows 10 20H1+ (лучше Windows 11 — там красивее выглядит Mica-фон)
+- .NET 10 SDK для сборки. Готовый `.exe` уже включает всё что нужно, ставить .NET на конечной машине не надо
+
+## Как пользоваться
+
+1. Запусти `TClient.exe`
+2. Первый раз нажми **Настройки** (⚙) → выбери папку для загрузок и лимит одновременных закачек (по умолчанию 3)
+3. Дальше просто:
+   - **+ Открыть .torrent** — выбор `.torrent` файла
+   - **+ Добавить magnet** — вставка `magnet:?...` ссылки
+   - Или правая кнопка на `.torrent` в Проводнике → **Открыть с помощью → TClient**
+4. Кнопки справа (▶ / ❚❚ / 🗑) действуют на выделенный торрент:
+   - **Возобновить** — запустить если стоит на паузе
+   - **Пауза** — остановить закачку, соединения останутся
+   - **Удалить** — с диалогом «удалить файлы с диска или оставить?»
+
+Внизу — общая скорость и количество активных пиров.
+
+## Где хранятся данные
+
+Всё лежит в `%LocalAppData%\TClient\`:
+- `settings.json` — папка загрузок и лимит закачек
+- `torrents.json` — список текущих торрентов
+- `cache/` — данные fast-resume от MonoTorrent (позволяет не перехешировать после перезапуска)
+- `debug.log` — диагностический лог (ротируется на 1 МБ)
+- `inbox/` — временные файлы обмена между экземплярами приложения
+
+Чтобы «начать с нуля» — просто удали эту папку.
+
+## Сборка из исходников (Debug)
+
+```powershell
+git clone https://github.com/yalyoha/TClient.git
 cd TClient
 dotnet build -c Release
 dotnet run --project src/TClient
 ```
 
-For a distributable single-file `.exe`:
+Тесты:
 ```powershell
-dotnet publish src/TClient -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
-# output at src/TClient/bin/Release/net10.0-windows.../win-x64/publish/TClient.exe
+dotnet test
 ```
 
-No `.msix` is produced — this is intentional.
+## Стек
 
-## Runtime data
+- **WinUI 3** (Windows App SDK) — GUI, unpackaged режим
+- **MonoTorrent** — движок BitTorrent-протокола
+- **CommunityToolkit.Mvvm** — MVVM-сокращалки
+- **xUnit** — юнит-тесты
+- **.NET 10** — рантайм
 
-State is stored under `%LocalAppData%\TClient\`:
-- `cache/` — MonoTorrent fast-resume + DHT node cache
-- `torrents.json` — the list of known torrents
+## Дизайн-документы
 
-Delete this folder to reset the app.
+Исходные спека и план реализации (написаны при создании, на английском, для интересующихся деталями):
 
-## Smoke test procedure
+- Спецификация: [`docs/superpowers/specs/2026-07-11-tclient-design.md`](docs/superpowers/specs/2026-07-11-tclient-design.md)
+- План реализации: [`docs/superpowers/plans/2026-07-11-tclient.md`](docs/superpowers/plans/2026-07-11-tclient.md)
 
-After building, verify manually:
+## Лицензия
 
-1. Launch — window appears with Acrylic backdrop, "TClient" title left, min/max/close right
-2. Click **Open .torrent** — pick a small public-domain torrent (e.g., latest Ubuntu netinst from `releases.ubuntu.com/*.torrent`)
-3. Pick a destination folder — download starts, row appears, progress ticks
-4. Click **Pause** on the selected row — state changes; DL rate goes to `—`
-5. Click **Resume** — state returns to Downloading
-6. Close and reopen the app — the torrent reappears and resumes from the same offset
-7. Click **Add magnet** — paste a valid magnet URI; verify metadata resolves and download starts
-8. Click **Remove** → **Keep files** — row disappears, files remain
-9. Click **Remove** → **Delete files** on a completed download — row disappears, files are gone
-
-If any step fails, file the reproduction in a scratch note and fix.
-
-## Design docs
-
-- Spec: `docs/superpowers/specs/2026-07-11-tclient-design.md`
-- Implementation plan: `docs/superpowers/plans/2026-07-11-tclient.md`
+Личный проект, распространяется как есть. Пиши, если хочешь что-то добавить или нашёл баг — issues и PR приветствуются.
