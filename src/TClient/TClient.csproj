@@ -21,7 +21,7 @@
     <LangVersion>latest</LangVersion>
     <AssemblyName>TClient</AssemblyName>
     <ApplicationIcon>Assets\tclient.ico</ApplicationIcon>
-    <Version>0.3.4</Version>
+    <Version>0.3.5</Version>
   </PropertyGroup>
 
   <ItemGroup>
