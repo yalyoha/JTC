@@ -1,4 +1,4 @@
-namespace TClient.Tests;
+namespace JTC.Tests;
 
 public class SanityTests
 {

@@ -1,7 +1,7 @@
 using MonoTorrent;
 using MonoTorrent.Client;
 
-namespace TClient.Services;
+namespace JTC.Services;
 
 public sealed class TorrentService : IAsyncDisposable
 {

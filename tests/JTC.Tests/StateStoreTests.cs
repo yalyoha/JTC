@@ -1,6 +1,6 @@
-using TClient.Services;
+using JTC.Services;
 
-namespace TClient.Tests;
+namespace JTC.Tests;
 
 public class StateStoreTests : IDisposable
 {
@@ -8,7 +8,7 @@ public class StateStoreTests : IDisposable
 
     public StateStoreTests()
     {
-        _tempDir = Path.Combine(Path.GetTempPath(), "TClientTests_" + Guid.NewGuid().ToString("N"));
+        _tempDir = Path.Combine(Path.GetTempPath(), "JTCTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempDir);
     }
 

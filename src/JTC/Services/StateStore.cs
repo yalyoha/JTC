@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace TClient.Services;
+namespace JTC.Services;
 
 public sealed class StateStore
 {

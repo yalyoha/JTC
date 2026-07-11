@@ -2,10 +2,10 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.UI.Dispatching;
 using MonoTorrent.Client;
-using TClient.Helpers;
-using TClient.Services;
+using JTC.Helpers;
+using JTC.Services;
 
-namespace TClient.ViewModels;
+namespace JTC.ViewModels;
 
 public sealed partial class MainViewModel : ObservableObject
 {

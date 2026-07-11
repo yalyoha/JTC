@@ -2,16 +2,17 @@ using Microsoft.Win32;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
-namespace TClient.Services;
+namespace JTC.Services;
 
 /// <summary>
-/// Registers TClient as a handler for <c>.torrent</c> files in the current user's
+/// Registers JTC as a handler for <c>.torrent</c> files in the current user's
 /// registry hive. No admin required. Idempotent: safe to call on every startup —
 /// only rewrites keys when a value changed.
 /// </summary>
 public static class FileAssociation
 {
-    private const string ProgId       = "TClient.Torrent";
+    private const string ProgId       = "JTC.Torrent";
+    private const string OldProgId    = "TClient.Torrent"; // pre-rebrand — remove on next launch
     private const string FriendlyName = "Файл торрента (JTC)";
     private const string Extension    = ".torrent";
 
@@ -26,7 +27,8 @@ public static class FileAssociation
     {
         try
         {
-            var exePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "TClient.exe");
+            var exePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "JTC.exe");
+            RemoveLegacyProgId();
             var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "tclient.ico");
             // Fall back to embedded exe icon if the file asset is missing for any reason.
             var iconRef = File.Exists(iconPath) ? $"\"{iconPath}\",0" : $"\"{exePath}\",0";
@@ -34,7 +36,7 @@ public static class FileAssociation
 
             var changed = false;
 
-            // 1. ProgID: HKCU\Software\Classes\TClient.Torrent
+            // 1. ProgID: HKCU\Software\Classes\JTC.Torrent
             using (var progIdKey = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{ProgId}", writable: true))
             {
                 changed |= SetValueIfDifferent(progIdKey, null, FriendlyName);
@@ -58,7 +60,7 @@ public static class FileAssociation
                 }
             }
 
-            // 3. Applications entry — makes "Open with" show TClient with the right name/icon
+            // 3. Applications entry — makes "Open with" show JTC with the right name/icon
             //    even when the file has no default association.
             using (var appsKey = Registry.CurrentUser.CreateSubKey(
                        $@"Software\Classes\Applications\{Path.GetFileName(exePath)}", writable: true))
@@ -111,5 +113,21 @@ public static class FileAssociation
             return false;
         key.SetValue(name, desired, RegistryValueKind.String);
         return true;
+    }
+
+    /// <summary>
+    /// Cleans up the pre-rebrand HKCU registry entries that pointed at TClient.Torrent /
+    /// TClient.exe. Safe if they're absent. Runs on every startup — idempotent.
+    /// </summary>
+    private static void RemoveLegacyProgId()
+    {
+        try
+        {
+            Registry.CurrentUser.DeleteSubKeyTree($@"Software\Classes\{OldProgId}", throwOnMissingSubKey: false);
+            Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\Applications\TClient.exe", throwOnMissingSubKey: false);
+            using var owp = Registry.CurrentUser.OpenSubKey($@"Software\Classes\{Extension}\OpenWithProgIds", writable: true);
+            owp?.DeleteValue(OldProgId, throwOnMissingValue: false);
+        }
+        catch (Exception ex) { DebugLog.Error("RemoveLegacyProgId", ex); }
     }
 }

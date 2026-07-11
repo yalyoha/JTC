@@ -1,7 +1,7 @@
 using System.Globalization;
 using MonoTorrent.Client;
 
-namespace TClient.Helpers;
+namespace JTC.Helpers;
 
 public static class Formatting
 {

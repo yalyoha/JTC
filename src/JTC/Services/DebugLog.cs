@@ -1,9 +1,9 @@
 using System.Globalization;
 
-namespace TClient.Services;
+namespace JTC.Services;
 
 /// <summary>
-/// Minimal append-only debug log to <c>%LocalAppData%\TClient\debug.log</c>.
+/// Minimal append-only debug log to <c>%LocalAppData%\JTC\debug.log</c>.
 /// Non-blocking (best-effort); never throws to callers.
 /// </summary>
 public static class DebugLog

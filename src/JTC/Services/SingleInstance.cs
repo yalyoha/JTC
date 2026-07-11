@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace TClient.Services;
+namespace JTC.Services;
 
 /// <summary>
 /// Cross-process single-instance guard for the current user session, with a file-based
@@ -17,7 +17,7 @@ public static class SingleInstance
 {
     // Local\ prefix scopes the mutex to the current user session — no admin needed,
     // and doesn't collide with other Windows users on the same machine.
-    private const string MutexName = @"Local\TClient-SingleInstance-yalyoha";
+    private const string MutexName = @"Local\JTC-SingleInstance-yalyoha";
 
     private static Mutex? _mutex;
     private static FileSystemWatcher? _watcher;

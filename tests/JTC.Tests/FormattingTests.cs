@@ -1,6 +1,6 @@
-using TClient.Helpers;
+using JTC.Helpers;
 
-namespace TClient.Tests;
+namespace JTC.Tests;
 
 public class FormattingTests
 {

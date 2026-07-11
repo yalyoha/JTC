@@ -1,4 +1,4 @@
-namespace TClient.Services;
+namespace JTC.Services;
 
 public sealed record AppSettings
 {

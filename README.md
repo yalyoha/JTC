@@ -31,10 +31,10 @@
 ```powershell
 git clone https://github.com/yalyoha/JTC.git
 cd JTC
-dotnet publish src/TClient -c Release -r win-x64 --self-contained
+dotnet publish src/JTC -c Release -r win-x64 --self-contained
 ```
 
-После этого в `src/TClient/bin/Release/net10.0-windows.../win-x64/publish/` появится папка со всеми файлами включая `TClient.exe` — переноси куда хочешь и запускай. Никаких `.msi`, `.msix`, установщиков, реестра HKLM или прав администратора не требуется.
+После этого в `src/JTC/bin/Release/net10.0-windows.../win-x64/publish/` появится папка со всеми файлами включая `JTC.exe` — переноси куда хочешь и запускай. Никаких `.msi`, `.msix`, установщиков, реестра HKLM или прав администратора не требуется.
 
 Либо возьми готовый **инсталлятор** из [релизов](https://github.com/yalyoha/JTC/releases) — это Inno Setup, ставит в `%LocalAppData%\Programs\JTC`, добавляет ярлык в Пуск и деинсталлятор в «Программы и компоненты».
 
@@ -44,7 +44,7 @@ dotnet publish src/TClient -c Release -r win-x64 --self-contained
 
 ## Как пользоваться
 
-1. Запусти `TClient.exe`
+1. Запусти `JTC.exe`
 2. Первый раз нажми **Настройки** (⚙) → выбери папку для загрузок и лимит одновременных закачек (по умолчанию 3)
 3. Дальше просто:
    - **+ Открыть .torrent** — выбор `.torrent` файла
@@ -57,16 +57,14 @@ dotnet publish src/TClient -c Release -r win-x64 --self-contained
 
 ## Где хранятся данные
 
-Всё лежит в `%LocalAppData%\TClient\`:
+Всё лежит в `%LocalAppData%\JTC\`:
 - `settings.json` — папка загрузок и лимит закачек
 - `torrents.json` — список текущих торрентов
 - `cache/` — данные fast-resume от MonoTorrent (позволяет не перехешировать после перезапуска)
 - `debug.log` — диагностический лог (ротируется на 1 МБ)
 - `inbox/` — временные файлы обмена между экземплярами приложения
 
-Чтобы «начать с нуля» — просто удали эту папку.
-
-Историческое имя папки — от изначального названия проекта «TClient», сохранено для совместимости с существующим состоянием.
+Чтобы «начать с нуля» — просто удали эту папку. Если ты запускал предыдущие версии до ребрендинга, старая папка `%LocalAppData%\TClient\` автоматически переименовалась в `JTC\` при первом старте — данные не потерялись.
 
 ## Сборка из исходников (Debug)
 
@@ -74,7 +72,7 @@ dotnet publish src/TClient -c Release -r win-x64 --self-contained
 git clone https://github.com/yalyoha/JTC.git
 cd JTC
 dotnet build -c Release
-dotnet run --project src/TClient
+dotnet run --project src/JTC
 ```
 
 Тесты:
@@ -90,13 +88,6 @@ dotnet test
 - **xUnit** — юнит-тесты
 - **Inno Setup** — установщик
 - **.NET 10** — рантайм
-
-## Дизайн-документы
-
-Исходные спека и план реализации (написаны при создании, на английском, для интересующихся деталями):
-
-- Спецификация: [`docs/superpowers/specs/2026-07-11-tclient-design.md`](docs/superpowers/specs/2026-07-11-tclient-design.md)
-- План реализации: [`docs/superpowers/plans/2026-07-11-tclient.md`](docs/superpowers/plans/2026-07-11-tclient.md)
 
 ## Лицензия
 

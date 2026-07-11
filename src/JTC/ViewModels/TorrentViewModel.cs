@@ -3,10 +3,10 @@ using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Media;
 using MonoTorrent.Client;
-using TClient.Helpers;
+using JTC.Helpers;
 using Windows.UI;
 
-namespace TClient.ViewModels;
+namespace JTC.ViewModels;
 
 public sealed partial class TorrentViewModel : ObservableObject
 {

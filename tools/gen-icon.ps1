@@ -5,7 +5,7 @@
 
 Add-Type -AssemblyName PresentationCore, WindowsBase
 
-$OutPath  = Join-Path $PSScriptRoot "..\src\TClient\Assets\tclient.ico"
+$OutPath  = Join-Path $PSScriptRoot "..\src\JTC\Assets\tclient.ico"
 $OutPath  = [System.IO.Path]::GetFullPath($OutPath)
 $SvgPath  = Join-Path $PSScriptRoot "..\icon\logo.svg"
 $SvgPath  = [System.IO.Path]::GetFullPath($SvgPath)

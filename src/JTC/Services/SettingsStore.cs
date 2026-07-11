@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace TClient.Services;
+namespace JTC.Services;
 
 public static class SettingsStore
 {

@@ -1,14 +1,14 @@
 ; Inno Setup script for Junior Torrent Client (JTC)
-; Compile with: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\TClient.iss
-; Output: dist\JTC-v0.3.17-setup.exe
+; Compile with: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\JTC.iss
+; Output: dist\JTC-v0.3.17.1-setup.exe
 
 #define MyAppName "Junior Torrent Client"
 #define MyAppShortName "JTC"
-#define MyAppVersion "0.3.17"
+#define MyAppVersion "0.3.17.1"
 #define MyAppPublisher "yalyoha"
 #define MyAppURL "https://github.com/yalyoha/JTC"
-#define MyAppExeName "TClient.exe"
-#define MyAppSourceDir "..\src\TClient\bin\Release\net10.0-windows10.0.19041.0\win-x64\publish"
+#define MyAppExeName "JTC.exe"
+#define MyAppSourceDir "..\src\JTC\bin\Release\net10.0-windows10.0.19041.0\win-x64\publish"
 
 [Setup]
 ; Unique GUID — do not change once released (identifies the app in "Programs and Features").
@@ -29,7 +29,7 @@ DisableProgramGroupPage=yes
 ; Where the installer .exe goes when built.
 OutputDir=..\dist
 OutputBaseFilename={#MyAppShortName}-v{#MyAppVersion}-setup
-SetupIconFile=..\src\TClient\Assets\tclient.ico
+SetupIconFile=..\src\JTC\Assets\tclient.ico
 Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern

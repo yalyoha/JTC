@@ -1,8 +1,8 @@
 using System;
 using Microsoft.UI.Xaml;
-using TClient.Services;
+using JTC.Services;
 
-namespace TClient;
+namespace JTC;
 
 public partial class App : Application
 {

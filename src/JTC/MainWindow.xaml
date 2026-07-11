@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Window
-    x:Class="TClient.MainWindow"
+    x:Class="JTC.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:vm="using:TClient.ViewModels"
+    xmlns:vm="using:JTC.ViewModels"
     Title="Junior Torrent Client">
     <Grid x:Name="RootGrid">
         <Grid.Background>
@@ -78,7 +78,8 @@
                   x:Name="TorrentList"
                   ItemsSource="{x:Bind ViewModel.Torrents, Mode=OneWay}"
                   SelectedItem="{x:Bind ViewModel.SelectedTorrent, Mode=TwoWay}"
-                  SelectionMode="Single"
+                  SelectionMode="Extended"
+                  SelectionChanged="TorrentList_SelectionChanged"
                   Padding="12,0,12,0">
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">

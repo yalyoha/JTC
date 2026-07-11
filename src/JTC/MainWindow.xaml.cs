@@ -1,13 +1,15 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
-using TClient.Services;
-using TClient.ViewModels;
+using JTC.Services;
+using JTC.ViewModels;
 
-namespace TClient;
+namespace JTC;
 
 public sealed partial class MainWindow : Window
 {
@@ -38,7 +40,11 @@ public sealed partial class MainWindow : Window
             AppWindow.SetIcon(iconPath);
 
         var v = Assembly.GetExecutingAssembly().GetName().Version;
-        VersionText.Text = v is null ? "" : $"v{v.Major}.{v.Minor}.{v.Build}";
+        VersionText.Text = v is null
+            ? ""
+            : v.Revision > 0
+                ? $"v{v.Major}.{v.Minor}.{v.Build}.{v.Revision}"
+                : $"v{v.Major}.{v.Minor}.{v.Build}";
     }
 
     private async void OnClosed(object sender, WindowEventArgs args)
@@ -155,38 +161,47 @@ public sealed partial class MainWindow : Window
         await dialog.ShowAsync();
     }
 
+    /// <summary>
+    /// Multi-select support: update every VM's IsSelected flag so the row-background brush
+    /// reflects the full selection set, not just the primary SelectedItem.
+    /// </summary>
+    private void TorrentList_SelectionChanged(object sender, Microsoft.UI.Xaml.Controls.SelectionChangedEventArgs e)
+    {
+        var selected = new HashSet<JTC.ViewModels.TorrentViewModel>(
+            TorrentList.SelectedItems.Cast<JTC.ViewModels.TorrentViewModel>());
+        foreach (var vm in ViewModel.Torrents)
+            vm.IsSelected = selected.Contains(vm);
+    }
+
+    private List<JTC.ViewModels.TorrentViewModel> SelectedVMs() =>
+        TorrentList.SelectedItems.Cast<JTC.ViewModels.TorrentViewModel>().ToList();
+
     private async void ResumeButton_Click(object sender, RoutedEventArgs e)
     {
-        var vm = ViewModel.SelectedTorrent;
-        if (vm is null) return;
-        try
+        var vms = SelectedVMs();
+        if (vms.Count == 0) return;
+        foreach (var vm in vms)
         {
-            await _service.ResumeAsync(vm.Manager);
-        }
-        catch (Exception ex)
-        {
-            await ShowErrorAsync("Не удалось возобновить", ex.Message);
+            try { await _service.ResumeAsync(vm.Manager); }
+            catch (Exception ex) { await ShowErrorAsync("Не удалось возобновить", ex.Message); break; }
         }
     }
 
     private async void PauseButton_Click(object sender, RoutedEventArgs e)
     {
-        var vm = ViewModel.SelectedTorrent;
-        if (vm is null) return;
-        try
+        var vms = SelectedVMs();
+        if (vms.Count == 0) return;
+        foreach (var vm in vms)
         {
-            await _service.PauseAsync(vm.Manager);
-        }
-        catch (Exception ex)
-        {
-            await ShowErrorAsync("Не удалось приостановить", ex.Message);
+            try { await _service.PauseAsync(vm.Manager); }
+            catch (Exception ex) { await ShowErrorAsync("Не удалось приостановить", ex.Message); break; }
         }
     }
 
     private async void RemoveButton_Click(object sender, RoutedEventArgs e)
     {
-        var vm = ViewModel.SelectedTorrent;
-        if (vm is null)
+        var vms = SelectedVMs();
+        if (vms.Count == 0)
         {
             await ShowErrorAsync("Ничего не выбрано", "Сначала выделите торрент в списке.");
             return;
@@ -194,8 +209,10 @@ public sealed partial class MainWindow : Window
 
         var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
         {
-            Title = "Удалить торрент",
-            Content = $"Также удалить скачанные файлы «{vm.Name}»?",
+            Title = vms.Count == 1 ? "Удалить торрент" : $"Удалить торренты ({vms.Count})",
+            Content = vms.Count == 1
+                ? $"Также удалить скачанные файлы «{vms[0].Name}»?"
+                : $"Также удалить скачанные файлы для {vms.Count} выбранных торрентов?",
             PrimaryButtonText = "Удалить файлы",
             SecondaryButtonText = "Оставить файлы",
             CloseButtonText = "Отмена",
@@ -208,22 +225,21 @@ public sealed partial class MainWindow : Window
 
         var deleteFiles = result == Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary;
 
-        // Optimistic UI: the row disappears immediately when the user confirms.
-        // The engine cleanup happens in the background — any failure there doesn't matter
-        // to the user; the torrent is gone from their point of view.
-        var manager = vm.Manager;
-        vm.Detach();
-        ViewModel.Torrents.Remove(vm);
-        if (ViewModel.SelectedTorrent == vm)
-            ViewModel.SelectedTorrent = null;
-
-        try
+        // Optimistic UI: pull every selected row out of the list right away, then let
+        // the service work through them sequentially in the background (RemoveAsync is
+        // serialized by TorrentService's internal semaphore).
+        var toRemove = vms.Select(v => (vm: v, manager: v.Manager)).ToList();
+        foreach (var (v, _) in toRemove)
         {
-            await _service.RemoveAsync(manager, deleteFiles);
+            v.Detach();
+            ViewModel.Torrents.Remove(v);
         }
-        catch
+        ViewModel.SelectedTorrent = null;
+
+        foreach (var (_, manager) in toRemove)
         {
-            // Engine failed to unregister — not user-actionable. The row is already gone.
+            try { await _service.RemoveAsync(manager, deleteFiles); }
+            catch { /* row already gone; engine failure is not user-actionable */ }
         }
     }
 

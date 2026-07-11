@@ -4,7 +4,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
-    <RootNamespace>TClient</RootNamespace>
+    <RootNamespace>JTC</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <Platforms>x64;ARM64</Platforms>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
@@ -19,9 +19,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
-    <AssemblyName>TClient</AssemblyName>
+    <AssemblyName>JTC</AssemblyName>
     <ApplicationIcon>Assets\tclient.ico</ApplicationIcon>
-    <Version>0.3.17</Version>
+    <Version>0.3.17.1</Version>
   </PropertyGroup>
 
   <ItemGroup>
