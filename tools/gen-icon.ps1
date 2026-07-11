@@ -47,11 +47,20 @@ function New-IconBitmap([int]$size) {
     $scale = $size / $svgW
     $dc.PushTransform((New-Object System.Windows.Media.ScaleTransform $scale, $scale))
 
+    # Clip to a rounded rectangle so the icon has Fluent-style rounded corners.
+    # Radius = ~18% of the icon's short side — matches Win11 default squircle look.
+    # At size=16 the radius collapses to a tiny value which is barely visible; that's fine.
+    $radius = $svgW * 0.18
+    $rect   = New-Object System.Windows.Rect 0, 0, $svgW, $svgH
+    $clip   = New-Object System.Windows.Media.RectangleGeometry $rect, $radius, $radius
+    $dc.PushClip($clip)
+
     # Parse the SVG path — WPF's geometry parser understands SVG's path syntax.
     $geom = [System.Windows.Media.Geometry]::Parse($d)
     $dc.DrawGeometry($brush, $null, $geom)
 
-    $dc.Pop()
+    $dc.Pop()   # pop clip
+    $dc.Pop()   # pop transform
     $dc.Close()
 
     $bitmap = New-Object System.Windows.Media.Imaging.RenderTargetBitmap `
