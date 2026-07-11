@@ -1,10 +1,11 @@
 ; Inno Setup script for Junior Torrent Client (JTC)
 ; Compile with: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\JTC.iss
-; Output: dist\JTC-v0.3.17.1-setup.exe
+; Output: dist\JTC-v0.3.17.2-setup.exe
 
 #define MyAppName "Junior Torrent Client"
 #define MyAppShortName "JTC"
-#define MyAppVersion "0.3.17.1"
+#define MyAppFolderName "JuniorTorrentClient"
+#define MyAppVersion "0.3.17.2"
 #define MyAppPublisher "yalyoha"
 #define MyAppURL "https://github.com/yalyoha/JTC"
 #define MyAppExeName "JTC.exe"
@@ -23,9 +24,14 @@ AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}/releases
 ; Per-user install — no UAC prompt, works without admin.
 PrivilegesRequired=lowest
-DefaultDirName={autopf}\{#MyAppShortName}
+DefaultDirName={autopf}\{#MyAppFolderName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
+; Ignore the previous InstallLocation / GroupName recorded in the registry.
+; Without these, a machine upgrading from the pre-rebrand "TClient" install would
+; keep installing into %LocalAppData%\Programs\TClient because Inno remembers the old path.
+UsePreviousAppDir=no
+UsePreviousGroup=no
 ; Where the installer .exe goes when built.
 OutputDir=..\dist
 OutputBaseFilename={#MyAppShortName}-v{#MyAppVersion}-setup
@@ -57,7 +63,6 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
-; Leave the app data (%LocalAppData%\TClient) alone by default — user's downloads / torrent list.
-; Just remove the install directory itself; other stray files (debug.log etc.) live in AppData
-; and are the user's to keep or delete.
+; Leave the app data (%LocalAppData%\JTC, and %LocalAppData%\TClient for old installs) alone
+; by default — that's the user's downloads / torrent list. Just remove the install directory.
 Type: filesandordirs; Name: "{app}"
