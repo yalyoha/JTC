@@ -4,12 +4,15 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:TClient.ViewModels"
-    Title="TClient">
+    Title="Junior Torrent Client">
     <Grid x:Name="RootGrid">
         <Grid.Background>
+            <!-- Same pink→orange gradient as the logo, but at 50% brightness (equivalent
+                 to overlaying 50% black on the original E52E71 → FF8A00). Muted palette
+                 keeps the identity while giving text room to breathe. -->
             <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
-                <GradientStop Color="#E52E71" Offset="0" />
-                <GradientStop Color="#FF8A00" Offset="1" />
+                <GradientStop Color="#721738" Offset="0" />
+                <GradientStop Color="#7F4500" Offset="1" />
             </LinearGradientBrush>
         </Grid.Background>
         <Grid.RowDefinitions>
@@ -23,13 +26,15 @@
                         VerticalAlignment="Center"
                         Margin="12,0,0,0"
                         Spacing="8">
-                <TextBlock Text="TClient"
+                <TextBlock Text="Junior Torrent Client"
                            VerticalAlignment="Center"
-                           Style="{ThemeResource CaptionTextBlockStyle}" />
+                           FontSize="16"
+                           FontWeight="SemiBold"
+                           Foreground="White" />
                 <TextBlock x:Name="VersionText"
                            VerticalAlignment="Center"
-                           Style="{ThemeResource CaptionTextBlockStyle}"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                           FontSize="12"
+                           Foreground="#B0FFFFFF" />
             </StackPanel>
         </Grid>
 
@@ -75,6 +80,27 @@
                   SelectedItem="{x:Bind ViewModel.SelectedTorrent, Mode=TwoWay}"
                   SelectionMode="Single"
                   Padding="12,0,12,0">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <!-- Default ListViewItem constrains its content to Left + adds padding.
+                         Stretch so our row Grid gets the full width, and zero padding so
+                         our own Grid Padding is the only spacer. -->
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="HorizontalAlignment" Value="Stretch" />
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="Margin" Value="0,0,0,3" />
+                </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.Resources>
+                <!-- Kill the built-in hover/selection overlays. Our per-state row-background
+                     is the only visual state indicator; without these overrides, the WinUI
+                     hover overlay renders slightly wider than our row Grid and looks weird. -->
+                <SolidColorBrush x:Key="ListViewItemBackgroundPointerOver"          Color="Transparent" />
+                <SolidColorBrush x:Key="ListViewItemBackgroundPressed"              Color="Transparent" />
+                <SolidColorBrush x:Key="ListViewItemBackgroundSelected"             Color="#33FFFFFF" />
+                <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPointerOver"  Color="#33FFFFFF" />
+                <SolidColorBrush x:Key="ListViewItemBackgroundSelectedPressed"      Color="#33FFFFFF" />
+            </ListView.Resources>
             <ListView.HeaderTemplate>
                 <DataTemplate>
                     <Grid Padding="8,4">
@@ -99,30 +125,51 @@
             </ListView.HeaderTemplate>
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="vm:TorrentViewModel">
-                    <Grid Padding="4,10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="2.5*" />
-                            <ColumnDefinition Width="80" />
-                            <ColumnDefinition Width="1.6*" />
-                            <ColumnDefinition Width="100" />
-                            <ColumnDefinition Width="100" />
-                            <ColumnDefinition Width="60" />
-                            <ColumnDefinition Width="120" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" VerticalAlignment="Center"
-                                   Text="{x:Bind Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
-                        <TextBlock Grid.Column="1" VerticalAlignment="Center"
-                                   Text="{x:Bind SizeText, Mode=OneWay}" />
-                        <TextBlock Grid.Column="2" VerticalAlignment="Center"
-                                   Text="{x:Bind ProgressText, Mode=OneWay}" />
-                        <TextBlock Grid.Column="3" VerticalAlignment="Center"
-                                   Text="{x:Bind DownloadRateText, Mode=OneWay}" />
-                        <TextBlock Grid.Column="4" VerticalAlignment="Center"
-                                   Text="{x:Bind UploadRateText, Mode=OneWay}" />
-                        <TextBlock Grid.Column="5" VerticalAlignment="Center"
-                                   Text="{x:Bind PeerCount, Mode=OneWay}" />
-                        <TextBlock Grid.Column="6" VerticalAlignment="Center"
-                                   Text="{x:Bind StateText, Mode=OneWay}" />
+                    <Grid CornerRadius="4" Background="{x:Bind RowBackground, Mode=OneWay}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="2" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Progress bar as the top "border" of the row — grows green from
+                             left as download advances. When 0% it's invisible (transparent
+                             track); at 100% it fills the whole top edge. -->
+                        <ProgressBar Grid.Row="0"
+                                     Value="{x:Bind Progress, Mode=OneWay}"
+                                     Maximum="100"
+                                     Height="2"
+                                     MinHeight="2"
+                                     Background="Transparent"
+                                     Foreground="#4CD964"
+                                     CornerRadius="0" />
+
+                        <!-- Bottom padding 12 = 10 (base) + 2 (compensate for the top progress-bar row)
+                             so the text baseline sits at the visual middle of the whole row. -->
+                        <Grid Grid.Row="1" Padding="8,10,8,12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="2.5*" />
+                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="1.6*" />
+                                <ColumnDefinition Width="100" />
+                                <ColumnDefinition Width="100" />
+                                <ColumnDefinition Width="60" />
+                                <ColumnDefinition Width="120" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                       Text="{x:Bind Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                                       Text="{x:Bind SizeText, Mode=OneWay}" />
+                            <TextBlock Grid.Column="2" VerticalAlignment="Center"
+                                       Text="{x:Bind ProgressText, Mode=OneWay}" />
+                            <TextBlock Grid.Column="3" VerticalAlignment="Center"
+                                       Text="{x:Bind DownloadRateText, Mode=OneWay}" />
+                            <TextBlock Grid.Column="4" VerticalAlignment="Center"
+                                       Text="{x:Bind UploadRateText, Mode=OneWay}" />
+                            <TextBlock Grid.Column="5" VerticalAlignment="Center"
+                                       Text="{x:Bind PeerCount, Mode=OneWay}" />
+                            <TextBlock Grid.Column="6" VerticalAlignment="Center"
+                                       Text="{x:Bind StateText, Mode=OneWay}" />
+                        </Grid>
                     </Grid>
                 </DataTemplate>
             </ListView.ItemTemplate>

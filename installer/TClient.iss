@@ -1,16 +1,18 @@
-; Inno Setup script for TClient
+; Inno Setup script for Junior Torrent Client (JTC)
 ; Compile with: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\TClient.iss
-; Output: dist\TClient-v0.3.7-setup.exe
+; Output: dist\JTC-v0.3.16-setup.exe
 
-#define MyAppName "TClient"
-#define MyAppVersion "0.3.7"
+#define MyAppName "Junior Torrent Client"
+#define MyAppShortName "JTC"
+#define MyAppVersion "0.3.16"
 #define MyAppPublisher "yalyoha"
-#define MyAppURL "https://github.com/yalyoha/TClient"
+#define MyAppURL "https://github.com/yalyoha/JTC"
 #define MyAppExeName "TClient.exe"
 #define MyAppSourceDir "..\src\TClient\bin\Release\net10.0-windows10.0.19041.0\win-x64\publish"
 
 [Setup]
-; Unique GUID for TClient — do not change once released (identifies the app in "Programs and Features").
+; Unique GUID — do not change once released (identifies the app in "Programs and Features").
+; Same GUID as pre-rebrand, so a user upgrading from a TClient install won't get a duplicate entry.
 AppId={{4F1B7EDF-9D9D-4C88-9E7A-4A3F1E7B2F91}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
@@ -21,12 +23,12 @@ AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}/releases
 ; Per-user install — no UAC prompt, works without admin.
 PrivilegesRequired=lowest
-DefaultDirName={autopf}\TClient
-DefaultGroupName=TClient
+DefaultDirName={autopf}\{#MyAppShortName}
+DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 ; Where the installer .exe goes when built.
 OutputDir=..\dist
-OutputBaseFilename=TClient-v{#MyAppVersion}-setup
+OutputBaseFilename={#MyAppShortName}-v{#MyAppVersion}-setup
 SetupIconFile=..\src\TClient\Assets\tclient.ico
 Compression=lzma2/max
 SolidCompression=yes

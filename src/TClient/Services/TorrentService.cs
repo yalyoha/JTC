@@ -35,7 +35,18 @@ public sealed class TorrentService : IAsyncDisposable
             CacheDirectory = AppPaths.CacheDir,
             MaximumConnections = MaxPeerConnections,
             MaximumHalfOpenConnections = MaxHalfOpenConnections,
-            // Explicitly on (also defaults, but making intent visible):
+            // "Optimal for high speed" from MonoTorrent docs: 50 MB in-memory disk cache
+            // smooths bursty piece writes; ReadsAndWrites policy caches both directions.
+            DiskCacheBytes = 50 * 1024 * 1024,
+            DiskCachePolicy = MonoTorrent.PieceWriter.CachePolicy.ReadsAndWrites,
+            // Encryption preference: encrypted first, plain-text as fallback.
+            // Some ISPs / trackers reject purely-plain-text connections.
+            AllowedEncryption = new System.Collections.Generic.List<MonoTorrent.Connections.EncryptionType>
+            {
+                MonoTorrent.Connections.EncryptionType.RC4Full,
+                MonoTorrent.Connections.EncryptionType.RC4Header,
+                MonoTorrent.Connections.EncryptionType.PlainText,
+            },
             AllowLocalPeerDiscovery = true,      // BEP 14 — LAN peer discovery
             AllowPortForwarding = true,          // UPnP / NAT-PMP — inbound reachability
             AutoSaveLoadDhtCache = true,         // remember DHT nodes across restarts

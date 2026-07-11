@@ -12,7 +12,7 @@ namespace TClient.Services;
 public static class FileAssociation
 {
     private const string ProgId       = "TClient.Torrent";
-    private const string FriendlyName = "Файл торрента (TClient)";
+    private const string FriendlyName = "Файл торрента (JTC)";
     private const string Extension    = ".torrent";
 
     // SHChangeNotify constants
@@ -63,7 +63,7 @@ public static class FileAssociation
             using (var appsKey = Registry.CurrentUser.CreateSubKey(
                        $@"Software\Classes\Applications\{Path.GetFileName(exePath)}", writable: true))
             {
-                changed |= SetValueIfDifferent(appsKey, "FriendlyAppName", "TClient");
+                changed |= SetValueIfDifferent(appsKey, "FriendlyAppName", "Junior Torrent Client");
                 using var iconKey = appsKey.CreateSubKey("DefaultIcon", writable: true);
                 changed |= SetValueIfDifferent(iconKey, null, iconRef);
                 using var cmdKey = appsKey.CreateSubKey(@"shell\open\command", writable: true);
