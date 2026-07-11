@@ -1,76 +1,87 @@
-# Generates src/TClient/Assets/tclient.ico with "TC" letters over an indigo background,
-# packing four resolutions (16, 32, 48, 256) into a single ICO container.
+# Renders icon/logo.svg into src/TClient/Assets/tclient.ico as a multi-resolution
+# ICO (16, 32, 48, 256) using WPF's Geometry.Parse (which speaks the same path syntax
+# as SVG) + a LinearGradientBrush that matches the SVG's gradient stops.
 # Run: pwsh -File tools/gen-icon.ps1
 
-Add-Type -AssemblyName System.Drawing
+Add-Type -AssemblyName PresentationCore, WindowsBase
 
-$OutPath = Join-Path $PSScriptRoot "..\src\TClient\Assets\tclient.ico"
-$OutPath = [System.IO.Path]::GetFullPath($OutPath)
-$Sizes   = @(16, 32, 48, 256)
-$BgColor = [System.Drawing.Color]::FromArgb(255, 91, 95, 199)   # #5B5FC7 indigo
-$Fg      = [System.Drawing.Brushes]::White
+$OutPath  = Join-Path $PSScriptRoot "..\src\TClient\Assets\tclient.ico"
+$OutPath  = [System.IO.Path]::GetFullPath($OutPath)
+$SvgPath  = Join-Path $PSScriptRoot "..\icon\logo.svg"
+$SvgPath  = [System.IO.Path]::GetFullPath($SvgPath)
+$Sizes    = @(16, 32, 48, 256)
 
-function New-TcBitmap([int]$size) {
-    $bmp = New-Object System.Drawing.Bitmap $size, $size, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
-    $g   = [System.Drawing.Graphics]::FromImage($bmp)
-    $g.SmoothingMode     = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-    $g.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
+if (-not (Test-Path $SvgPath)) { throw "SVG source not found: $SvgPath" }
 
-    # Rounded-corner background (except at 16px where corners disappear anyway)
-    $radius = [int]($size * 0.18)
-    $rect   = New-Object System.Drawing.Rectangle 0, 0, $size, $size
-    if ($radius -ge 2) {
-        $path = New-Object System.Drawing.Drawing2D.GraphicsPath
-        $d = $radius * 2
-        $path.AddArc($rect.X,                     $rect.Y,                      $d, $d, 180, 90)
-        $path.AddArc($rect.Right - $d,            $rect.Y,                      $d, $d, 270, 90)
-        $path.AddArc($rect.Right - $d,            $rect.Bottom - $d,            $d, $d,   0, 90)
-        $path.AddArc($rect.X,                     $rect.Bottom - $d,            $d, $d,  90, 90)
-        $path.CloseFigure()
-        $brush = New-Object System.Drawing.SolidBrush $BgColor
-        $g.FillPath($brush, $path)
-        $brush.Dispose()
-        $path.Dispose()
-    } else {
-        $brush = New-Object System.Drawing.SolidBrush $BgColor
-        $g.FillRectangle($brush, $rect)
-        $brush.Dispose()
-    }
+# Parse the SVG to extract the single path's `d` attribute and the viewBox extent.
+$svg = [xml](Get-Content $SvgPath -Raw)
+$ns  = New-Object System.Xml.XmlNamespaceManager $svg.NameTable
+$ns.AddNamespace('s', 'http://www.w3.org/2000/svg')
+$pathNode = $svg.SelectSingleNode('//s:path', $ns)
+if (-not $pathNode) { throw "SVG has no <path> element" }
+$d = $pathNode.d
 
-    # "TC" text — smaller factor because two glyphs need to fit width-wise
-    $fontSize = [Math]::Max(6.0, [double]$size * 0.44)
-    $font = New-Object System.Drawing.Font 'Segoe UI', $fontSize, ([System.Drawing.FontStyle]::Bold), ([System.Drawing.GraphicsUnit]::Pixel)
-    $format = New-Object System.Drawing.StringFormat
-    $format.Alignment     = [System.Drawing.StringAlignment]::Center
-    $format.LineAlignment = [System.Drawing.StringAlignment]::Center
-    $textRect = New-Object System.Drawing.RectangleF 0, 0, $size, $size
-    $g.DrawString("TC", $font, $Fg, $textRect, $format)
+# ViewBox: "min-x min-y width height"
+$viewBox = ($svg.svg.viewBox -split '\s+') | ForEach-Object { [double]$_ }
+$svgW    = $viewBox[2]
+$svgH    = $viewBox[3]
 
-    $font.Dispose()
-    $format.Dispose()
-    $g.Dispose()
-    return $bmp
+Write-Host "SVG viewBox: $svgW x $svgH; path length: $($d.Length) chars"
+
+# Gradient stops picked from logo.svg's <linearGradient id="id0">
+$stopColorTop    = [System.Windows.Media.Color]::FromRgb(0xE5, 0x2E, 0x71)  # pink
+$stopColorBottom = [System.Windows.Media.Color]::FromRgb(0xFF, 0x8A, 0x00)  # orange
+
+function New-IconBitmap([int]$size) {
+    $visual = New-Object System.Windows.Media.DrawingVisual
+    $dc     = $visual.RenderOpen()
+
+    # Vertical gradient — StartPoint at top, EndPoint at bottom (relative coords).
+    $brush = New-Object System.Windows.Media.LinearGradientBrush
+    $null  = $brush.GradientStops.Add((New-Object System.Windows.Media.GradientStop $stopColorTop,    0))
+    $null  = $brush.GradientStops.Add((New-Object System.Windows.Media.GradientStop $stopColorBottom, 1))
+    $brush.StartPoint = New-Object System.Windows.Point 0.5, 0
+    $brush.EndPoint   = New-Object System.Windows.Point 0.5, 1
+
+    # Scale the drawing context from SVG user units to icon pixels.
+    $scale = $size / $svgW
+    $dc.PushTransform((New-Object System.Windows.Media.ScaleTransform $scale, $scale))
+
+    # Parse the SVG path — WPF's geometry parser understands SVG's path syntax.
+    $geom = [System.Windows.Media.Geometry]::Parse($d)
+    $dc.DrawGeometry($brush, $null, $geom)
+
+    $dc.Pop()
+    $dc.Close()
+
+    $bitmap = New-Object System.Windows.Media.Imaging.RenderTargetBitmap `
+        $size, $size, 96, 96, ([System.Windows.Media.PixelFormats]::Pbgra32)
+    $bitmap.Render($visual)
+    $bitmap.Freeze()
+    return $bitmap
 }
 
-function Get-PngBytes([System.Drawing.Bitmap]$bmp) {
-    $ms = New-Object System.IO.MemoryStream
-    $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+function Get-PngBytes([System.Windows.Media.Imaging.RenderTargetBitmap]$bmp) {
+    $encoder = New-Object System.Windows.Media.Imaging.PngBitmapEncoder
+    $null    = $encoder.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($bmp))
+    $ms      = New-Object System.IO.MemoryStream
+    $encoder.Save($ms)
     return , $ms.ToArray()
 }
 
-# Build all bitmaps and PNGs first (need lengths to compute directory offsets)
+# Build all sizes first.
 $entries = @()
 foreach ($size in $Sizes) {
-    $bmp = New-TcBitmap $size
+    $bmp = New-IconBitmap $size
     $png = Get-PngBytes $bmp
-    $bmp.Dispose()
     $entries += [pscustomobject]@{ Size = $size; Png = $png }
+    Write-Host ("  {0}x{0}: {1} bytes PNG" -f $size, $png.Length)
 }
 
-# ICO layout: 6-byte ICONDIR + (16-byte ICONDIRENTRY * N) + image data blobs
-$dirSize  = 6 + (16 * $entries.Count)
-$out      = New-Object System.IO.FileStream $OutPath, ([System.IO.FileMode]::Create)
-$w        = New-Object System.IO.BinaryWriter $out
+# ICO layout: 6-byte ICONDIR + (16-byte ICONDIRENTRY * N) + PNG blobs.
+$dirSize = 6 + (16 * $entries.Count)
+$out     = New-Object System.IO.FileStream $OutPath, ([System.IO.FileMode]::Create)
+$w       = New-Object System.IO.BinaryWriter $out
 
 # ICONDIR
 $w.Write([uint16]0)              # Reserved
@@ -90,11 +101,7 @@ foreach ($e in $entries) {
     $w.Write([uint32]$offset)            # Image data offset
     $offset += $e.Png.Length
 }
-
-foreach ($e in $entries) {
-    $w.Write($e.Png)
-}
-
+foreach ($e in $entries) { $w.Write($e.Png) }
 $w.Close()
 $out.Close()
 

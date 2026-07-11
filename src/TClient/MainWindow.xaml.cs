@@ -56,12 +56,21 @@ public sealed partial class MainWindow : Window
         var file = await picker.PickSingleFileAsync();
         if (file is null) return;
 
+        await OpenTorrentPathAsync(file.Path);
+    }
+
+    /// <summary>
+    /// Adds a torrent from a known file path (used by file-association activation from Windows
+    /// Explorer). Reuses the same folder-picking logic as the manual button.
+    /// </summary>
+    public async Task OpenTorrentPathAsync(string torrentPath)
+    {
         var downloadDir = await GetOrPickDownloadDirAsync();
         if (downloadDir is null) return;
 
         try
         {
-            await _service.AddTorrentFileAsync(file.Path, downloadDir, startImmediately: true);
+            await _service.AddTorrentFileAsync(torrentPath, downloadDir, startImmediately: true);
         }
         catch (Exception ex)
         {
