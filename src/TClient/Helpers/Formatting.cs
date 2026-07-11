@@ -1,4 +1,5 @@
 using System.Globalization;
+using MonoTorrent.Client;
 
 namespace TClient.Helpers;
 
@@ -6,6 +7,22 @@ public static class Formatting
 {
     private static readonly string[] SizeSuffixes = ["B", "KB", "MB", "GB", "TB", "PB"];
     private static readonly CultureInfo Culture = CultureInfo.InvariantCulture;
+
+    public static string StateToRu(TorrentState state) => state switch
+    {
+        TorrentState.Stopped        => "Остановлен",
+        TorrentState.Paused         => "На паузе",
+        TorrentState.Starting       => "Запуск",
+        TorrentState.Downloading    => "Скачивание",
+        TorrentState.Seeding        => "Раздача",
+        TorrentState.Hashing        => "Проверка",
+        TorrentState.HashingPaused  => "Проверка (пауза)",
+        TorrentState.Stopping       => "Остановка",
+        TorrentState.Error          => "Ошибка",
+        TorrentState.Metadata       => "Метаданные",
+        TorrentState.FetchingHashes => "Хеши",
+        _                           => state.ToString(),
+    };
 
     public static string BytesToHuman(long bytes)
     {

@@ -19,3 +19,6 @@ Desktop.ini
 # Local runtime data (in case someone ever runs it from repo root)
 LocalAppData/
 *.log
+
+# Debug / test artifacts
+screenshots/

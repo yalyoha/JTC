@@ -26,9 +26,9 @@ public sealed partial class TorrentViewModel : ObservableObject
         Manager = manager;
         _dispatcher = dispatcher;
 
-        Name = manager.Torrent?.Name ?? "(loading metadata…)";
+        Name = manager.Torrent?.Name ?? "(загрузка метаданных…)";
         SizeText = manager.Torrent is null ? "—" : Formatting.BytesToHuman(manager.Torrent.Size);
-        StateText = manager.State.ToString();
+        StateText = Formatting.StateToRu(manager.State);
 
         manager.TorrentStateChanged += OnStateChanged;
     }
@@ -47,7 +47,7 @@ public sealed partial class TorrentViewModel : ObservableObject
         DownloadRateText = Formatting.RateToHuman(Manager.Monitor.DownloadRate);
         UploadRateText = Formatting.RateToHuman(Manager.Monitor.UploadRate);
         PeerCount = Manager.Peers.Available;
-        StateText = Manager.State.ToString();
+        StateText = Formatting.StateToRu(Manager.State);
         IsPaused = Manager.State is TorrentState.Paused or TorrentState.Stopped;
     }
 
@@ -55,7 +55,7 @@ public sealed partial class TorrentViewModel : ObservableObject
     {
         _dispatcher.TryEnqueue(() =>
         {
-            StateText = e.NewState.ToString();
+            StateText = Formatting.StateToRu(e.NewState);
             IsPaused = e.NewState is TorrentState.Paused or TorrentState.Stopped;
         });
     }

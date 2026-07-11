@@ -17,7 +17,15 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
     <AssemblyName>TClient</AssemblyName>
+    <ApplicationIcon>Assets\tclient.ico</ApplicationIcon>
+    <Version>0.2.10</Version>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\tclient.ico">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
