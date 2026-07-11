@@ -21,9 +21,9 @@ public sealed partial class MainWindow : Window
         ViewModel = new MainViewModel(service, DispatcherQueue);
         Closed += OnClosed;
 
-        // Mica BaseAlt: subtle desktop-wallpaper tint, distinctly less transparent than DesktopAcrylic.
-        // Trade-off: no blur behind the window (that's an Acrylic-only effect), but readability is much better.
-        SystemBackdrop = new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt };
+        // Custom gradient background (pink→orange) is set on RootGrid in XAML — it fully
+        // covers the window, so no OS backdrop is needed underneath.
+        // SystemBackdrop = null;
 
         // Merge title bar into the client area so Acrylic reads through it.
         ExtendsContentIntoTitleBar = true;

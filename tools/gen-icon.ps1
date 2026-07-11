@@ -49,15 +49,29 @@ function New-IconBitmap([int]$size) {
 
     # Clip to a rounded rectangle so the icon has Fluent-style rounded corners.
     # Radius = ~18% of the icon's short side — matches Win11 default squircle look.
-    # At size=16 the radius collapses to a tiny value which is barely visible; that's fine.
     $radius = $svgW * 0.18
     $rect   = New-Object System.Windows.Rect 0, 0, $svgW, $svgH
     $clip   = New-Object System.Windows.Media.RectangleGeometry $rect, $radius, $radius
     $dc.PushClip($clip)
 
+    # Two-layer fill to guarantee explicit white arrows regardless of what surface
+    # displays the icon (dark/light theme, taskbar acrylic, etc):
+    # 1) Paint the whole viewport WHITE — this becomes the arrow color.
+    # 2) Paint the SVG path with the gradient on top. The path uses evenodd fill-rule
+    #    so the outer square is filled with gradient but the arrow subpath stays as
+    #    transparent holes → the white underneath shows through as white arrows.
+    $whiteBrush = [System.Windows.Media.Brushes]::White
+    $dc.DrawRectangle($whiteBrush, $null, $rect)
+
     # Parse the SVG path — WPF's geometry parser understands SVG's path syntax.
+    # PathGeometry uses evenodd by default when Geometry.Parse builds a StreamGeometry;
+    # to be safe, coerce fill-rule via manual PathGeometry construction below if needed.
     $geom = [System.Windows.Media.Geometry]::Parse($d)
-    $dc.DrawGeometry($brush, $null, $geom)
+    # Convert to PathGeometry so we can set FillRule to EvenOdd explicitly (matches SVG source).
+    $pathGeom = New-Object System.Windows.Media.PathGeometry
+    $pathGeom.FillRule = [System.Windows.Media.FillRule]::EvenOdd
+    foreach ($fig in $geom.GetFlattenedPathGeometry().Figures) { $pathGeom.Figures.Add($fig) }
+    $dc.DrawGeometry($brush, $null, $pathGeom)
 
     $dc.Pop()   # pop clip
     $dc.Pop()   # pop transform

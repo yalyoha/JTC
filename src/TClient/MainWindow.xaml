@@ -5,12 +5,17 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:vm="using:TClient.ViewModels"
     Title="TClient">
-    <Grid x:Name="RootGrid" Background="Transparent">
+    <Grid x:Name="RootGrid">
+        <Grid.Background>
+            <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
+                <GradientStop Color="#E52E71" Offset="0" />
+                <GradientStop Color="#FF8A00" Offset="1" />
+            </LinearGradientBrush>
+        </Grid.Background>
         <Grid.RowDefinitions>
             <RowDefinition Height="32" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Grid x:Name="AppTitleBar" Grid.Row="0" Height="32" Background="Transparent">
@@ -123,21 +128,5 @@
             </ListView.ItemTemplate>
         </ListView>
 
-        <Grid Grid.Row="3" Padding="12,6" Background="{ThemeResource LayerFillColorDefaultBrush}">
-            <StackPanel Orientation="Horizontal" Spacing="18">
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE74B;" />
-                    <TextBlock Text="{x:Bind ViewModel.TotalDownloadRateText, Mode=OneWay}" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <FontIcon FontFamily="{StaticResource SymbolThemeFontFamily}" Glyph="&#xE74A;" />
-                    <TextBlock Text="{x:Bind ViewModel.TotalUploadRateText, Mode=OneWay}" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Spacing="6">
-                    <TextBlock Text="Пиры:" />
-                    <TextBlock Text="{x:Bind ViewModel.TotalPeers, Mode=OneWay}" />
-                </StackPanel>
-            </StackPanel>
-        </Grid>
     </Grid>
 </Window>
