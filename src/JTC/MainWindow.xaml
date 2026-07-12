@@ -142,7 +142,8 @@
             </ListView.HeaderTemplate>
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="vm:TorrentViewModel">
-                    <Grid CornerRadius="4" Background="{x:Bind RowBackground, Mode=OneWay}">
+                    <Grid CornerRadius="4" Background="{x:Bind RowBackground, Mode=OneWay}"
+                          DoubleTapped="TorrentRow_DoubleTapped">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="2" />
                             <RowDefinition Height="*" />

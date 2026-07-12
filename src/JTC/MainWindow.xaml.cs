@@ -296,6 +296,65 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    /// <summary>
+    /// Double-click a row → open the download folder in Windows Explorer with the
+    /// torrent's file (single-file torrent) or its container folder (multi-file torrent)
+    /// highlighted. Uses <c>explorer.exe /select,</c> so the user doesn't have to
+    /// visually scan the download folder among unrelated files.
+    /// </summary>
+    private void TorrentRow_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || fe.DataContext is not TorrentViewModel vm)
+            return;
+
+        var manager = vm.Manager;
+        string? target = null;
+        try
+        {
+            if (manager.Files is { Count: 1 } files && !string.IsNullOrEmpty(files[0].FullPath))
+            {
+                target = files[0].FullPath;
+            }
+            else if (manager.Torrent is not null && !string.IsNullOrEmpty(manager.Torrent.Name))
+            {
+                target = Path.Combine(manager.SavePath, manager.Torrent.Name);
+            }
+        }
+        catch { /* fall through to fallback */ }
+
+        // Fallback for magnets whose metadata hasn't arrived — just open the download dir.
+        if (string.IsNullOrEmpty(target))
+        {
+            if (Directory.Exists(manager.SavePath))
+            {
+                try
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = manager.SavePath,
+                        UseShellExecute = true,
+                    });
+                }
+                catch { /* best-effort */ }
+            }
+            return;
+        }
+
+        // /select, is the documented switch that opens Explorer at the parent folder with
+        // the given item selected. Quote the path so paths with spaces work; a comma is
+        // impossible inside a Windows path so no further escaping is needed.
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "explorer.exe",
+                Arguments = $"/select,\"{target}\"",
+                UseShellExecute = true,
+            });
+        }
+        catch { /* best-effort */ }
+    }
+
     private async void SettingsButton_Click(object sender, RoutedEventArgs e)
     {
         var current = SettingsStore.Load();
