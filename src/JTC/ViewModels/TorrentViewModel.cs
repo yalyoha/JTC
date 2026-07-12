@@ -22,13 +22,15 @@ public sealed partial class TorrentViewModel : ObservableObject
     private static readonly SolidColorBrush BrushSeedingSelected     = new(Color.FromArgb(0x60, 0xFF, 0xFF, 0xFF));
     private static readonly SolidColorBrush BrushDownloading         = new(Color.FromArgb(0x40, 0xFF, 0xD5, 0x80));
     private static readonly SolidColorBrush BrushDownloadingSelected = new(Color.FromArgb(0x75, 0xFF, 0xD5, 0x80));
-    private static readonly SolidColorBrush BrushChecking            = new(Color.FromArgb(0x40, 0xFF, 0x8A, 0xD5));
-    private static readonly SolidColorBrush BrushCheckingSelected    = new(Color.FromArgb(0x75, 0xFF, 0x8A, 0xD5));
     private static readonly SolidColorBrush BrushIdle                = new(Color.FromArgb(0x35, 0x30, 0x20, 0x40));
     private static readonly SolidColorBrush BrushIdleSelected        = new(Color.FromArgb(0x70, 0x30, 0x20, 0x40));
     private static readonly SolidColorBrush BrushError               = new(Color.FromArgb(0x50, 0xB0, 0x20, 0x20));
     private static readonly SolidColorBrush BrushErrorSelected       = new(Color.FromArgb(0x80, 0xB0, 0x20, 0x20));
-    private static readonly SolidColorBrush BrushTransparent         = new(Colors.Transparent);
+
+    // Simplified user-visible state. Everything the engine reports (Paused, Stopped,
+    // Starting, Hashing, Metadata, Downloading-with-zero-rate, …) collapses to Waiting;
+    // Downloading with a live rate is the only "actively pulling bytes" state.
+    private enum Display { Waiting, Downloading, Seeding, Error }
 
     private readonly DispatcherQueue _dispatcher;
 
@@ -44,9 +46,9 @@ public sealed partial class TorrentViewModel : ObservableObject
     [ObservableProperty] private string _stateText = "";
     [ObservableProperty] private bool _isPaused;
     [ObservableProperty] private bool _isSelected;
-    [ObservableProperty] private Brush _rowBackground = BrushTransparent;
+    [ObservableProperty] private Brush _rowBackground = BrushIdle;
 
-    partial void OnIsSelectedChanged(bool value) => RowBackground = BrushForState(Manager.State, value);
+    partial void OnIsSelectedChanged(bool value) => ApplyDisplay(ComputeDisplay(Manager));
 
     public TorrentViewModel(TorrentManager manager, DispatcherQueue dispatcher)
     {
@@ -55,8 +57,7 @@ public sealed partial class TorrentViewModel : ObservableObject
 
         Name = manager.Torrent?.Name ?? "(загрузка метаданных…)";
         SizeText = manager.Torrent is null ? "—" : Formatting.BytesToHuman(manager.Torrent.Size);
-        StateText = Formatting.StateToRu(manager.State);
-        RowBackground = BrushForState(manager.State, false);
+        ApplyDisplay(ComputeDisplay(manager));
 
         manager.TorrentStateChanged += OnStateChanged;
     }
@@ -75,22 +76,16 @@ public sealed partial class TorrentViewModel : ObservableObject
         DownloadRateText = Formatting.RateToHuman(Manager.Monitor.DownloadRate);
         UploadRateText = Formatting.RateToHuman(Manager.Monitor.UploadRate);
         PeerCount = Manager.Peers.Available;
-        // "Ожидание" reads better than "Скачивание" when we haven't found any peers yet —
-        // the torrent hasn't actually stalled, it just has nobody to talk to.
-        StateText = Manager.State == TorrentState.Downloading && Manager.Peers.Available == 0
-            ? "Ожидание"
-            : Formatting.StateToRu(Manager.State);
         IsPaused = Manager.State is TorrentState.Paused or TorrentState.Stopped;
-        RowBackground = BrushForState(Manager.State, IsSelected);
+        ApplyDisplay(ComputeDisplay(Manager));
     }
 
     private void OnStateChanged(object? sender, TorrentStateChangedEventArgs e)
     {
         _dispatcher.TryEnqueue(() =>
         {
-            StateText = Formatting.StateToRu(e.NewState);
             IsPaused = e.NewState is TorrentState.Paused or TorrentState.Stopped;
-            RowBackground = BrushForState(e.NewState, IsSelected);
+            ApplyDisplay(ComputeDisplay(Manager));
         });
     }
 
@@ -99,14 +94,29 @@ public sealed partial class TorrentViewModel : ObservableObject
         Manager.TorrentStateChanged -= OnStateChanged;
     }
 
-    private static SolidColorBrush BrushForState(TorrentState state, bool selected) => state switch
+    private void ApplyDisplay(Display d)
     {
-        TorrentState.Seeding                                                => selected ? BrushSeedingSelected     : BrushSeeding,
-        TorrentState.Downloading or TorrentState.Starting                   => selected ? BrushDownloadingSelected : BrushDownloading,
-        TorrentState.Hashing or TorrentState.HashingPaused
-            or TorrentState.Metadata or TorrentState.FetchingHashes         => selected ? BrushCheckingSelected    : BrushChecking,
-        TorrentState.Paused or TorrentState.Stopped or TorrentState.Stopping => selected ? BrushIdleSelected        : BrushIdle,
-        TorrentState.Error                                                  => selected ? BrushErrorSelected       : BrushError,
-        _                                                                    => BrushTransparent,
+        StateText = d switch
+        {
+            Display.Seeding     => "Раздача",
+            Display.Downloading => "Загрузка",
+            Display.Error       => "Ошибка",
+            _                   => "Ожидание",
+        };
+        RowBackground = d switch
+        {
+            Display.Seeding     => IsSelected ? BrushSeedingSelected     : BrushSeeding,
+            Display.Downloading => IsSelected ? BrushDownloadingSelected : BrushDownloading,
+            Display.Error       => IsSelected ? BrushErrorSelected       : BrushError,
+            _                   => IsSelected ? BrushIdleSelected        : BrushIdle,
+        };
+    }
+
+    private static Display ComputeDisplay(TorrentManager m) => m.State switch
+    {
+        TorrentState.Seeding                                     => Display.Seeding,
+        TorrentState.Error                                       => Display.Error,
+        TorrentState.Downloading when m.Monitor.DownloadRate > 0 => Display.Downloading,
+        _                                                        => Display.Waiting,
     };
 }
