@@ -1,3 +1,4 @@
+using System.Net;
 using MonoTorrent;
 using MonoTorrent.Client;
 
@@ -10,7 +11,15 @@ public sealed class TorrentService : IAsyncDisposable
     private const int MaxPeerConnections = 500;
 
     // Faster ramp-up when adding a torrent — more parallel connection attempts.
-    private const int MaxHalfOpenConnections = 30;
+    // Raised from 30 → 50 because the typical usage pattern here is ONE hot torrent
+    // at a time; all half-open budget goes to it, so more parallel attempts = faster
+    // pool build-up = faster time-to-peak-speed.
+    private const int MaxHalfOpenConnections = 50;
+
+    // Fixed TCP+UDP port so UPnP/NAT-PMP mappings survive restarts and known peers
+    // can reconnect to the same address. 51413 is the qBittorrent default — well-known,
+    // not conflicting with other common apps.
+    private const int PeerListenPort = 51413;
 
     private readonly ClientEngine _engine;
     private readonly StateStore _store;
@@ -35,9 +44,12 @@ public sealed class TorrentService : IAsyncDisposable
             CacheDirectory = AppPaths.CacheDir,
             MaximumConnections = MaxPeerConnections,
             MaximumHalfOpenConnections = MaxHalfOpenConnections,
-            // "Optimal for high speed" from MonoTorrent docs: 50 MB in-memory disk cache
-            // smooths bursty piece writes; ReadsAndWrites policy caches both directions.
-            DiskCacheBytes = 50 * 1024 * 1024,
+            // 128 MB in-memory disk cache (up from 50 MB). Under our typical single-hot-
+            // torrent workload one torrent gets all 500 peer slots — the cache smooths
+            // its bursty piece writes on slower disks (HDDs, SMR drives) and reduces
+            // syscall churn. On SSDs it's still helpful for the read-ahead side of
+            // ReadsAndWrites when we upload to peers.
+            DiskCacheBytes = 128 * 1024 * 1024,
             DiskCachePolicy = MonoTorrent.PieceWriter.CachePolicy.ReadsAndWrites,
             // Encryption preference: encrypted first, plain-text as fallback.
             // Some ISPs / trackers reject purely-plain-text connections.
@@ -47,6 +59,16 @@ public sealed class TorrentService : IAsyncDisposable
                 MonoTorrent.Connections.EncryptionType.RC4Header,
                 MonoTorrent.Connections.EncryptionType.PlainText,
             },
+            // Fixed listen endpoints so UPnP/NAT-PMP maps a stable port across restarts
+            // (peers can reconnect to the same address; DHT UDP socket doesn't shift).
+            ListenEndPoints = new System.Collections.Generic.Dictionary<string, IPEndPoint>
+            {
+                { "ipv4", new IPEndPoint(IPAddress.Any, PeerListenPort) },
+            },
+            DhtEndPoint = new IPEndPoint(IPAddress.Any, PeerListenPort),
+            // Note: MonoTorrent 3.0.2 doesn't expose DhtBootstrapRouters — it uses its
+            // own default bootstrap list internally. If a newer version exposes it we
+            // should re-add explicit routers here as a resilience measure.
             AllowLocalPeerDiscovery = true,      // BEP 14 — LAN peer discovery
             AllowPortForwarding = true,          // UPnP / NAT-PMP — inbound reachability
             AutoSaveLoadDhtCache = true,         // remember DHT nodes across restarts
