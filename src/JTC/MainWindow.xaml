@@ -7,15 +7,8 @@
     xmlns:tb="using:H.NotifyIcon"
     Title="Junior Torrent Client">
     <Grid x:Name="RootGrid">
-        <Grid.Background>
-            <!-- Same pink→orange gradient as the logo, but at 50% brightness (equivalent
-                 to overlaying 50% black on the original E52E71 → FF8A00). Muted palette
-                 keeps the identity while giving text room to breathe. -->
-            <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
-                <GradientStop Color="#721738" Offset="0" />
-                <GradientStop Color="#7F4500" Offset="1" />
-            </LinearGradientBrush>
-        </Grid.Background>
+        <!-- Background + RequestedTheme are set from code-behind via ThemeHelper based on
+             the user's chosen theme (Brand / Dark / Light). -->
         <Grid.RowDefinitions>
             <RowDefinition Height="32" />
             <RowDefinition Height="Auto" />
@@ -30,10 +23,14 @@
                         NoLeftClickDelay="True"
                         MenuActivation="RightClick">
             <tb:TaskbarIcon.ContextFlyout>
+                <!-- Click= handlers on these items are wired in code-behind (MainWindow ctor).
+                     XAML Click= assignment on MenuFlyoutItems inside TaskbarIcon.ContextFlyout
+                     doesn't reliably reach the compiled code-behind — the flyout is realized
+                     on the shell/notification-area surface, outside the WinUI element tree. -->
                 <MenuFlyout>
-                    <MenuFlyoutItem Text="Показать" Click="TrayShow_Click" />
+                    <MenuFlyoutItem x:Name="TrayShowItem" Text="Показать" />
                     <MenuFlyoutSeparator />
-                    <MenuFlyoutItem Text="Выход" Click="TrayExit_Click" />
+                    <MenuFlyoutItem x:Name="TrayExitItem" Text="Выход" />
                 </MenuFlyout>
             </tb:TaskbarIcon.ContextFlyout>
         </tb:TaskbarIcon>
@@ -47,11 +44,11 @@
                            VerticalAlignment="Center"
                            FontSize="16"
                            FontWeight="SemiBold"
-                           Foreground="White" />
+                           Foreground="{ThemeResource TextFillColorPrimaryBrush}" />
                 <TextBlock x:Name="VersionText"
                            VerticalAlignment="Center"
                            FontSize="12"
-                           Foreground="#B0FFFFFF" />
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
             </StackPanel>
         </Grid>
 

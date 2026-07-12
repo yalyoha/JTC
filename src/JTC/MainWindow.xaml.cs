@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
+using JTC.Helpers;
 using JTC.Services;
 using JTC.ViewModels;
 
@@ -24,9 +25,9 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         ViewModel = new MainViewModel(service, DispatcherQueue);
 
-        // Custom gradient background (pink→orange) is set on RootGrid in XAML — it fully
-        // covers the window, so no OS backdrop is needed underneath.
-        // SystemBackdrop = null;
+        // Paint the window background + set element theme from the user's saved choice.
+        // No OS backdrop is needed underneath — the theme brush covers the whole grid.
+        ThemeHelper.Apply(RootGrid, SettingsStore.Load().Theme);
 
         // Merge title bar into the client area so Acrylic reads through it.
         ExtendsContentIntoTitleBar = true;
@@ -51,6 +52,27 @@ public sealed partial class MainWindow : Window
         // seeding/leeching in the background. Real quit is only via the tray "Выход" item.
         AppWindow.Closing += OnAppWindowClosing;
         TrayIcon.LeftClickCommand = new RelayCommand(RestoreFromTray);
+
+        // Wire tray context-flyout items. Use Command instead of Click event because
+        // clicks on MenuFlyoutItems inside TaskbarIcon.ContextFlyout haven't been
+        // firing in this H.NotifyIcon.WinUI version (verified via empty debug.log).
+        TrayShowItem.Command = new RelayCommand(() =>
+        {
+            DebugLog.Info("Tray 'Показать' command fired");
+            RestoreFromTray();
+        });
+        TrayExitItem.Command = new RelayCommand(() =>
+        {
+            DebugLog.Info("Tray 'Выход' command fired — killing process");
+            System.Diagnostics.Process.GetCurrentProcess().Kill();
+        });
+
+        // Diagnostic: log whenever the flyout opens so we can tell if the XAML menu
+        // is even showing, vs Windows drawing its own menu we can't intercept.
+        if (TrayIcon.ContextFlyout is Microsoft.UI.Xaml.Controls.MenuFlyout mf)
+        {
+            mf.Opened += (_, _) => DebugLog.Info("Tray context flyout opened");
+        }
     }
 
     private void OnAppWindowClosing(Microsoft.UI.Windowing.AppWindow sender,
@@ -70,13 +92,15 @@ public sealed partial class MainWindow : Window
 
     private void TrayShow_Click(object sender, RoutedEventArgs e) => RestoreFromTray();
 
-    private async void TrayExit_Click(object sender, RoutedEventArgs e)
+    private void TrayExit_Click(object sender, RoutedEventArgs e)
     {
-        _reallyExiting = true;
-        ViewModel.Stop();
-        try { await _service.DisposeAsync(); } catch { /* best-effort on quit */ }
-        TrayIcon.Dispose();
-        Application.Current.Exit();
+        // Kill immediately, no cleanup, no await, nothing that could throw or block
+        // before we reach TerminateProcess. Torrent state is persisted after every
+        // add/remove/pause/resume, so a hard-kill loses nothing important. Log first
+        // so we can confirm the handler even fires (previous versions with graceful
+        // shutdown appeared to never reach the exit call at all).
+        DebugLog.Info("TrayExit_Click fired — killing process");
+        System.Diagnostics.Process.GetCurrentProcess().Kill();
     }
 
     private async void OpenTorrentButton_Click(object sender, RoutedEventArgs e)
@@ -126,6 +150,7 @@ public sealed partial class MainWindow : Window
             DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Primary,
             XamlRoot = Content.XamlRoot,
         };
+        ThemeHelper.ApplyToDialog(dialog, ThemeHelper.CurrentTheme);
         var result = await dialog.ShowAsync();
         if (result != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary)
             return;
@@ -184,6 +209,7 @@ public sealed partial class MainWindow : Window
             CloseButtonText = "OK",
             XamlRoot = Content.XamlRoot,
         };
+        ThemeHelper.ApplyToDialog(dialog, ThemeHelper.CurrentTheme);
         await dialog.ShowAsync();
     }
 
@@ -245,6 +271,7 @@ public sealed partial class MainWindow : Window
             DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Secondary,
             XamlRoot = Content.XamlRoot,
         };
+        ThemeHelper.ApplyToDialog(dialog, ThemeHelper.CurrentTheme);
         var result = await dialog.ShowAsync();
         if (result == Microsoft.UI.Xaml.Controls.ContentDialogResult.None)
             return; // Отмена
@@ -313,9 +340,27 @@ public sealed partial class MainWindow : Window
             HorizontalAlignment = HorizontalAlignment.Left,
         };
 
+        // Theme picker — indices match ItemsSource order below.
+        var themeBox = new Microsoft.UI.Xaml.Controls.ComboBox
+        {
+            Header = "Тема",
+            Width = 200,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        themeBox.Items.Add("Фирменная");
+        themeBox.Items.Add("Чёрная");
+        themeBox.Items.Add("Белая");
+        themeBox.SelectedIndex = current.Theme switch
+        {
+            AppTheme.Dark  => 1,
+            AppTheme.Light => 2,
+            _              => 0,
+        };
+
         var panel = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 16, MinWidth = 420 };
         panel.Children.Add(pathRow);
         panel.Children.Add(maxBox);
+        panel.Children.Add(themeBox);
 
         var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
         {
@@ -326,19 +371,36 @@ public sealed partial class MainWindow : Window
             DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Primary,
             XamlRoot = Content.XamlRoot,
         };
+        ThemeHelper.ApplyToDialog(dialog, ThemeHelper.CurrentTheme);
         var res = await dialog.ShowAsync();
         if (res != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary) return;
 
         var newDir = pathBox.Text?.Trim();
         var newMax = (int)Math.Round(maxBox.Value);
         if (newMax < 1) newMax = 1;
+        var newTheme = themeBox.SelectedIndex switch
+        {
+            1 => AppTheme.Dark,
+            2 => AppTheme.Light,
+            _ => AppTheme.Brand,
+        };
 
         var updated = current with
         {
             LastDownloadDir = string.IsNullOrEmpty(newDir) ? null : newDir,
             MaxSimultaneousDownloads = newMax,
+            Theme = newTheme,
         };
         SettingsStore.Save(updated);
+
+        if (updated.Theme != current.Theme)
+        {
+            ThemeHelper.Apply(RootGrid, updated.Theme);
+            // Cached row brushes belong to the old palette — refresh so each
+            // row picks up the new theme's brushes immediately (otherwise
+            // they'd only update on the next 1-second timer tick).
+            foreach (var vm in ViewModel.Torrents) vm.Refresh();
+        }
 
         try
         {
