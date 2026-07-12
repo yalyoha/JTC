@@ -43,13 +43,22 @@ public partial class App : Application
         var window = _mainWindow;
         SingleInstance.TorrentPathReceived += path =>
             window.DispatcherQueue.TryEnqueue(async () => await window.OpenTorrentPathAsync(path));
+        SingleInstance.MagnetReceived += magnet =>
+            window.DispatcherQueue.TryEnqueue(async () => await window.OpenMagnetAsync(magnet));
         SingleInstance.ShowWindowRequested += () =>
             window.DispatcherQueue.TryEnqueue(window.RestoreFromTray);
         SingleInstance.StartWatching();
 
-        // Handle the .torrent path this very process was launched with, if any.
-        var initial = SingleInstance.ExtractTorrentPath(cliArgs);
+        // Handle the launch argument this very process was given, if any — either a
+        // .torrent file path (from Explorer / file association) or a magnet: URI (from
+        // a browser via the URL scheme handler).
+        var initial = SingleInstance.ExtractLaunchSource(cliArgs);
         if (initial is not null)
-            _ = _mainWindow.OpenTorrentPathAsync(initial);
+        {
+            if (initial.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
+                _ = _mainWindow.OpenMagnetAsync(initial);
+            else
+                _ = _mainWindow.OpenTorrentPathAsync(initial);
+        }
     }
 }

@@ -250,4 +250,47 @@ public static class ThemeHelper
         foreach (var key in BrandMenuFlyoutKeys)
             res.Remove(key);
     }
+
+    /// <summary>
+    /// Applies caption-button (minimize / maximize / close) colors that match the
+    /// active theme. Windows would otherwise dim inactive-state icons to grey, which
+    /// reads as "out of style" on Brand and Dark themes (icons blend into pink/dark
+    /// background) and inversely, active white-on-white icons vanish on Light theme.
+    /// Same foreground for active + inactive keeps them consistently readable.
+    /// </summary>
+    public static void ApplyToTitleBar(Microsoft.UI.Windowing.AppWindowTitleBar titleBar, AppTheme theme)
+    {
+        var transparent = (Color?)Color.FromArgb(0, 0, 0, 0);
+
+        if (theme == AppTheme.Light)
+        {
+            var dark      = Color.FromArgb(0xFF, 0x21, 0x21, 0x21);
+            var hoverBg   = Color.FromArgb(0x15, 0x00, 0x00, 0x00);
+            var pressedBg = Color.FromArgb(0x25, 0x00, 0x00, 0x00);
+
+            titleBar.ButtonForegroundColor            = dark;
+            titleBar.ButtonInactiveForegroundColor    = dark;
+            titleBar.ButtonHoverForegroundColor       = dark;
+            titleBar.ButtonPressedForegroundColor     = dark;
+            titleBar.ButtonBackgroundColor            = transparent;
+            titleBar.ButtonInactiveBackgroundColor    = transparent;
+            titleBar.ButtonHoverBackgroundColor       = hoverBg;
+            titleBar.ButtonPressedBackgroundColor     = pressedBg;
+        }
+        else
+        {
+            var white     = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF);
+            var hoverBg   = Color.FromArgb(0x25, 0xFF, 0xFF, 0xFF);
+            var pressedBg = Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF);
+
+            titleBar.ButtonForegroundColor            = white;
+            titleBar.ButtonInactiveForegroundColor    = white;
+            titleBar.ButtonHoverForegroundColor       = white;
+            titleBar.ButtonPressedForegroundColor     = white;
+            titleBar.ButtonBackgroundColor            = transparent;
+            titleBar.ButtonInactiveBackgroundColor    = transparent;
+            titleBar.ButtonHoverBackgroundColor       = hoverBg;
+            titleBar.ButtonPressedBackgroundColor     = pressedBg;
+        }
+    }
 }

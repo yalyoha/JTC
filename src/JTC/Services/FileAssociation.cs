@@ -60,7 +60,28 @@ public static class FileAssociation
                 }
             }
 
-            // 3. Applications entry — makes "Open with" show JTC with the right name/icon
+            // 3. magnet: URL protocol handler. Registered under HKCU\Software\Classes\magnet
+            //    so browsers hand off "magnet:..." links to JTC. The "URL Protocol" empty
+            //    string value is what marks a key as a URL scheme (vs a file extension).
+            //    We claim the (default) command outright because there's no ambient default
+            //    magnet handler shell built-in for us to conflict with — if the user has
+            //    another torrent client that also claimed the scheme, they can pick from
+            //    the "Open with" prompt Windows shows for a new URL scheme.
+            using (var magnetKey = Registry.CurrentUser.CreateSubKey(@"Software\Classes\magnet", writable: true))
+            {
+                changed |= SetValueIfDifferent(magnetKey, null, "URL:BitTorrent Magnet URL");
+                if (magnetKey.GetValue("URL Protocol") is null)
+                {
+                    magnetKey.SetValue("URL Protocol", string.Empty, RegistryValueKind.String);
+                    changed = true;
+                }
+                using var iconKey = magnetKey.CreateSubKey("DefaultIcon", writable: true);
+                changed |= SetValueIfDifferent(iconKey, null, iconRef);
+                using var cmdKey = magnetKey.CreateSubKey(@"shell\open\command", writable: true);
+                changed |= SetValueIfDifferent(cmdKey, null, openCommand);
+            }
+
+            // 4. Applications entry — makes "Open with" show JTC with the right name/icon
             //    even when the file has no default association.
             using (var appsKey = Registry.CurrentUser.CreateSubKey(
                        $@"Software\Classes\Applications\{Path.GetFileName(exePath)}", writable: true))

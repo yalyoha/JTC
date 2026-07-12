@@ -24,6 +24,7 @@ public static class SingleInstance
     private static string InboxDir => Path.Combine(AppPaths.Root, "inbox");
 
     public static event Action<string>? TorrentPathReceived;
+    public static event Action<string>? MagnetReceived;
     public static event Action? ShowWindowRequested;
 
     /// <summary>
@@ -34,7 +35,7 @@ public static class SingleInstance
     /// </summary>
     public static bool TryClaimOrHandOff(string[] args)
     {
-        var torrentPath = ExtractTorrentPath(args);
+        var source = ExtractLaunchSource(args);
 
         _mutex = new Mutex(initiallyOwned: false, MutexName, out bool createdNew);
         if (createdNew)
@@ -44,14 +45,15 @@ public static class SingleInstance
             return false;
         }
 
-        // Secondary instance — drop a note in the inbox and exit. Empty-content note
-        // means "just bring the primary's window back from the tray"; a torrent path
-        // means "open this .torrent in the primary".
+        // Secondary instance — drop a note in the inbox and exit. Empty content means
+        // "just bring the primary's window back from the tray"; a torrent path or a
+        // magnet URI means "open this in the primary". The primary detects which by
+        // checking the "magnet:" prefix.
         try
         {
             Directory.CreateDirectory(InboxDir);
             var target = Path.Combine(InboxDir, Guid.NewGuid().ToString("N") + ".txt");
-            File.WriteAllText(target, torrentPath ?? string.Empty);
+            File.WriteAllText(target, source ?? string.Empty);
         }
         catch { /* best-effort — user can just add manually */ }
         _mutex.Dispose();
@@ -82,14 +84,16 @@ public static class SingleInstance
         {
             foreach (var file in Directory.EnumerateFiles(InboxDir, "*.txt"))
             {
-                string? path = null;
-                try { path = File.ReadAllText(file).Trim(); }
+                string? content = null;
+                try { content = File.ReadAllText(file).Trim(); }
                 catch { /* file may still be locked by writer; skip and retry next tick */ }
 
-                if (!string.IsNullOrEmpty(path))
-                    TorrentPathReceived?.Invoke(path);
-                else
+                if (string.IsNullOrEmpty(content))
                     ShowWindowRequested?.Invoke();
+                else if (content.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
+                    MagnetReceived?.Invoke(content);
+                else
+                    TorrentPathReceived?.Invoke(content);
 
                 try { File.Delete(file); } catch { /* fine */ }
             }
@@ -100,15 +104,21 @@ public static class SingleInstance
         }
     }
 
-    public static string? ExtractTorrentPath(string[] args)
+    /// <summary>
+    /// Extracts either a .torrent file path OR a magnet URI from the process's launch
+    /// arguments — whichever comes first. Returns null if neither is present. Callers
+    /// distinguish which they got by checking the "magnet:" prefix.
+    /// </summary>
+    public static string? ExtractLaunchSource(string[] args)
     {
         // args[0] is the exe path when launched via Environment.GetCommandLineArgs().
         for (int i = 1; i < args.Length; i++)
         {
-            var a = args[i];
-            if (!string.IsNullOrWhiteSpace(a) &&
-                a.EndsWith(".torrent", StringComparison.OrdinalIgnoreCase) &&
-                File.Exists(a))
+            var a = args[i]?.Trim();
+            if (string.IsNullOrWhiteSpace(a)) continue;
+            if (a.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
+                return a;
+            if (a.EndsWith(".torrent", StringComparison.OrdinalIgnoreCase) && File.Exists(a))
                 return a;
         }
         return null;

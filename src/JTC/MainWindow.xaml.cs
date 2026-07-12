@@ -28,11 +28,13 @@ public sealed partial class MainWindow : Window
 
         // Paint the window background + set element theme from the user's saved choice.
         // No OS backdrop is needed underneath — the theme brush covers the whole grid.
-        ThemeHelper.Apply(RootGrid, SettingsStore.Load().Theme);
+        var initialTheme = SettingsStore.Load().Theme;
+        ThemeHelper.Apply(RootGrid, initialTheme);
 
         // Merge title bar into the client area so Acrylic reads through it.
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
+        ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, initialTheme);
 
         // Reasonable initial size.
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1000, 640));
@@ -132,6 +134,25 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             await ShowErrorAsync("Не удалось открыть торрент", ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Adds a magnet URI (used by URL-scheme activation from browsers — "magnet:..." link
+    /// in a webpage). Reuses the same folder-picking logic as the manual button.
+    /// </summary>
+    public async Task OpenMagnetAsync(string magnetUri)
+    {
+        var downloadDir = await GetOrPickDownloadDirAsync();
+        if (downloadDir is null) return;
+
+        try
+        {
+            await _service.AddMagnetAsync(magnetUri, downloadDir, startImmediately: true);
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync("Не удалось добавить magnet", ex.Message);
         }
     }
 
@@ -496,6 +517,7 @@ public sealed partial class MainWindow : Window
         if (updated.Theme != current.Theme)
         {
             ThemeHelper.Apply(RootGrid, updated.Theme);
+            ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, updated.Theme);
             // Cached row brushes belong to the old palette — refresh so each
             // row picks up the new theme's brushes immediately (otherwise
             // they'd only update on the next 1-second timer tick).
