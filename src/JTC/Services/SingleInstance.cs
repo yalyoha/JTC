@@ -24,6 +24,7 @@ public static class SingleInstance
     private static string InboxDir => Path.Combine(AppPaths.Root, "inbox");
 
     public static event Action<string>? TorrentPathReceived;
+    public static event Action? ShowWindowRequested;
 
     /// <summary>
     /// Attempts to claim the primary-instance mutex. If another instance already holds it,
@@ -43,17 +44,16 @@ public static class SingleInstance
             return false;
         }
 
-        // Secondary instance — hand off to the primary and exit.
-        if (torrentPath is not null)
+        // Secondary instance — drop a note in the inbox and exit. Empty-content note
+        // means "just bring the primary's window back from the tray"; a torrent path
+        // means "open this .torrent in the primary".
+        try
         {
-            try
-            {
-                Directory.CreateDirectory(InboxDir);
-                var target = Path.Combine(InboxDir, Guid.NewGuid().ToString("N") + ".txt");
-                File.WriteAllText(target, torrentPath);
-            }
-            catch { /* best-effort — user can just add manually */ }
+            Directory.CreateDirectory(InboxDir);
+            var target = Path.Combine(InboxDir, Guid.NewGuid().ToString("N") + ".txt");
+            File.WriteAllText(target, torrentPath ?? string.Empty);
         }
+        catch { /* best-effort — user can just add manually */ }
         _mutex.Dispose();
         _mutex = null;
         return true;
@@ -88,6 +88,8 @@ public static class SingleInstance
 
                 if (!string.IsNullOrEmpty(path))
                     TorrentPathReceived?.Invoke(path);
+                else
+                    ShowWindowRequested?.Invoke();
 
                 try { File.Delete(file); } catch { /* fine */ }
             }

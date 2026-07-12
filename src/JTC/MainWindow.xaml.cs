@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using JTC.Services;
@@ -15,13 +16,13 @@ public sealed partial class MainWindow : Window
 {
     public MainViewModel ViewModel { get; }
     private readonly TorrentService _service;
+    private bool _reallyExiting;
 
     public MainWindow(TorrentService service)
     {
         _service = service;
         InitializeComponent();
         ViewModel = new MainViewModel(service, DispatcherQueue);
-        Closed += OnClosed;
 
         // Custom gradient background (pink→orange) is set on RootGrid in XAML — it fully
         // covers the window, so no OS backdrop is needed underneath.
@@ -45,12 +46,37 @@ public sealed partial class MainWindow : Window
             : v.Revision > 0
                 ? $"v{v.Major}.{v.Minor}.{v.Build}.{v.Revision}"
                 : $"v{v.Major}.{v.Minor}.{v.Build}";
+
+        // Torrent client stays alive when the user closes the window — engine keeps
+        // seeding/leeching in the background. Real quit is only via the tray "Выход" item.
+        AppWindow.Closing += OnAppWindowClosing;
+        TrayIcon.LeftClickCommand = new RelayCommand(RestoreFromTray);
     }
 
-    private async void OnClosed(object sender, WindowEventArgs args)
+    private void OnAppWindowClosing(Microsoft.UI.Windowing.AppWindow sender,
+                                    Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
     {
+        if (_reallyExiting) return;
+        args.Cancel = true;
+        AppWindow.Hide();
+    }
+
+    public void RestoreFromTray()
+    {
+        AppWindow.Show();
+        AppWindow.MoveInZOrderAtTop();
+        Activate();
+    }
+
+    private void TrayShow_Click(object sender, RoutedEventArgs e) => RestoreFromTray();
+
+    private async void TrayExit_Click(object sender, RoutedEventArgs e)
+    {
+        _reallyExiting = true;
         ViewModel.Stop();
-        await _service.DisposeAsync();
+        try { await _service.DisposeAsync(); } catch { /* best-effort on quit */ }
+        TrayIcon.Dispose();
+        Application.Current.Exit();
     }
 
     private async void OpenTorrentButton_Click(object sender, RoutedEventArgs e)

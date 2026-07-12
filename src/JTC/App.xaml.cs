@@ -38,9 +38,13 @@ public partial class App : Application
         await Service.LoadStateAsync();
 
         // Route any inbox file-drops (from secondary "Open with" launches) into the UI.
+        // An empty drop means "primary is in the tray, please show yourself" — this covers
+        // the case where the user re-launches JTC while it's minimized.
         var window = _mainWindow;
         SingleInstance.TorrentPathReceived += path =>
             window.DispatcherQueue.TryEnqueue(async () => await window.OpenTorrentPathAsync(path));
+        SingleInstance.ShowWindowRequested += () =>
+            window.DispatcherQueue.TryEnqueue(window.RestoreFromTray);
         SingleInstance.StartWatching();
 
         // Handle the .torrent path this very process was launched with, if any.
