@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
+using MonoTorrent.Client;
 using JTC.Helpers;
 using JTC.Services;
 using JTC.ViewModels;
@@ -258,7 +259,16 @@ public sealed partial class MainWindow : Window
             await ShowErrorAsync("Ничего не выбрано", "Сначала выделите торрент в списке.");
             return;
         }
+        await DeleteWithConfirmationAsync(vms);
+    }
 
+    /// <summary>
+    /// Shared delete flow — used by the toolbar (multi-select) and the row context menu
+    /// (single row). Shows the "delete files / keep files / cancel" dialog, then optimistically
+    /// removes the rows from the UI and lets the service work through them serially.
+    /// </summary>
+    private async Task DeleteWithConfirmationAsync(List<TorrentViewModel> vms)
+    {
         var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
         {
             Title = vms.Count == 1 ? "Удалить торрент" : $"Удалить торренты ({vms.Count})",
@@ -278,9 +288,9 @@ public sealed partial class MainWindow : Window
 
         var deleteFiles = result == Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary;
 
-        // Optimistic UI: pull every selected row out of the list right away, then let
-        // the service work through them sequentially in the background (RemoveAsync is
-        // serialized by TorrentService's internal semaphore).
+        // Optimistic UI: pull every row out of the list right away, then let the service
+        // work through them sequentially in the background (RemoveAsync is serialized by
+        // TorrentService's internal semaphore).
         var toRemove = vms.Select(v => (vm: v, manager: v.Manager)).ToList();
         foreach (var (v, _) in toRemove)
         {
@@ -297,17 +307,50 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Double-click a row → open the download folder in Windows Explorer with the
-    /// torrent's file (single-file torrent) or its container folder (multi-file torrent)
-    /// highlighted. Uses <c>explorer.exe /select,</c> so the user doesn't have to
-    /// visually scan the download folder among unrelated files.
+    /// Double-click a row → reveal the torrent's file or container folder in Explorer.
     /// </summary>
     private void TorrentRow_DoubleTapped(object sender, Microsoft.UI.Xaml.Input.DoubleTappedRoutedEventArgs e)
     {
+        if (sender is FrameworkElement fe && fe.DataContext is TorrentViewModel vm)
+            RevealInExplorer(vm.Manager);
+    }
+
+    private void RowOpen_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement fe && fe.DataContext is TorrentViewModel vm)
+            RevealInExplorer(vm.Manager);
+    }
+
+    private async void RowRecheck_Click(object sender, RoutedEventArgs e)
+    {
         if (sender is not FrameworkElement fe || fe.DataContext is not TorrentViewModel vm)
             return;
+        try
+        {
+            await _service.RecheckAsync(vm.Manager);
+        }
+        catch (Exception ex)
+        {
+            await ShowErrorAsync("Не удалось обновить", ex.Message);
+        }
+    }
 
-        var manager = vm.Manager;
+    private async void RowDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement fe || fe.DataContext is not TorrentViewModel vm)
+            return;
+        await DeleteWithConfirmationAsync(new List<TorrentViewModel> { vm });
+    }
+
+    /// <summary>
+    /// Opens the download folder in Windows Explorer with the torrent's file (single-
+    /// file torrent) or its container folder (multi-file torrent) highlighted. Uses
+    /// <c>explorer.exe /select,</c> so the user doesn't have to visually scan among
+    /// unrelated files. Falls back to just opening the download folder when metadata
+    /// hasn't arrived yet (magnet still resolving).
+    /// </summary>
+    private void RevealInExplorer(TorrentManager manager)
+    {
         string? target = null;
         try
         {
@@ -322,7 +365,6 @@ public sealed partial class MainWindow : Window
         }
         catch { /* fall through to fallback */ }
 
-        // Fallback for magnets whose metadata hasn't arrived — just open the download dir.
         if (string.IsNullOrEmpty(target))
         {
             if (Directory.Exists(manager.SavePath))
@@ -340,9 +382,8 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        // /select, is the documented switch that opens Explorer at the parent folder with
-        // the given item selected. Quote the path so paths with spaces work; a comma is
-        // impossible inside a Windows path so no further escaping is needed.
+        // /select, opens Explorer at the parent folder with the given item selected.
+        // Quote the path so spaces work; commas are impossible inside a Windows path.
         try
         {
             System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo

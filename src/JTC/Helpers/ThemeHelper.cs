@@ -198,5 +198,56 @@ public static class ThemeHelper
                 root.RequestedTheme = ElementTheme.Dark;
                 break;
         }
+
+        // Context-menu (MenuFlyout) brushes — the row right-click flyout renders on
+        // XamlRoot's popup surface, so ThemeResource lookup from the MenuFlyoutPresenter
+        // does NOT traverse back through RootGrid. Application.Current.Resources is at
+        // the root of every lookup chain, so put overrides there.
+        if (theme == AppTheme.Brand)
+            ApplyBrandMenuFlyoutBrushes();
+        else
+            ClearBrandMenuFlyoutBrushes();
+    }
+
+    private static readonly string[] BrandMenuFlyoutKeys = new[]
+    {
+        "MenuFlyoutPresenterBackground",
+        "MenuFlyoutPresenterBorderBrush",
+        "MenuFlyoutItemForeground",
+        "MenuFlyoutItemForegroundPointerOver",
+        "MenuFlyoutItemForegroundPressed",
+        "MenuFlyoutItemBackground",
+        "MenuFlyoutItemBackgroundPointerOver",
+        "MenuFlyoutItemBackgroundPressed",
+        "MenuFlyoutSeparatorBackground",
+    };
+
+    private static void ApplyBrandMenuFlyoutBrushes()
+    {
+        var res = Application.Current.Resources;
+
+        var white       = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF));
+        var transparent = new SolidColorBrush(Color.FromArgb(0x00, 0, 0, 0));
+        var hover       = new SolidColorBrush(Color.FromArgb(0x33, 0xFF, 0xFF, 0xFF));
+        var pressed     = new SolidColorBrush(Color.FromArgb(0x55, 0xFF, 0xFF, 0xFF));
+        var border      = new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF));
+        var separator   = new SolidColorBrush(Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
+
+        res["MenuFlyoutPresenterBackground"]       = BrandGradient();
+        res["MenuFlyoutPresenterBorderBrush"]      = border;
+        res["MenuFlyoutItemForeground"]            = white;
+        res["MenuFlyoutItemForegroundPointerOver"] = white;
+        res["MenuFlyoutItemForegroundPressed"]     = white;
+        res["MenuFlyoutItemBackground"]            = transparent;
+        res["MenuFlyoutItemBackgroundPointerOver"] = hover;
+        res["MenuFlyoutItemBackgroundPressed"]     = pressed;
+        res["MenuFlyoutSeparatorBackground"]       = separator;
+    }
+
+    private static void ClearBrandMenuFlyoutBrushes()
+    {
+        var res = Application.Current.Resources;
+        foreach (var key in BrandMenuFlyoutKeys)
+            res.Remove(key);
     }
 }

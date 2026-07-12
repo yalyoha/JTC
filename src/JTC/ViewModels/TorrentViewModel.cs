@@ -15,9 +15,11 @@ public sealed partial class TorrentViewModel : ObservableObject
     // container's built-in selection background is turned off in MainWindow.xaml).
 
     // Simplified user-visible state. Everything the engine reports (Paused, Stopped,
-    // Starting, Hashing, Metadata, Downloading-with-zero-rate, …) collapses to Waiting;
-    // Downloading with a live rate is the only "actively pulling bytes" state.
-    private enum Display { Waiting, Downloading, Seeding, Error }
+    // Starting, Metadata, Downloading-with-zero-rate, …) collapses to Waiting; Downloading
+    // with a live rate is the only "actively pulling bytes" state. Hashing is broken out
+    // separately so the user can see rechecks in progress after "Обновить" — otherwise a
+    // multi-minute hash check just shows as "Ожидание" and looks stuck.
+    private enum Display { Waiting, Downloading, Seeding, Error, Hashing }
 
     private readonly DispatcherQueue _dispatcher;
 
@@ -88,6 +90,7 @@ public sealed partial class TorrentViewModel : ObservableObject
             Display.Seeding     => "Раздача",
             Display.Downloading => "Загрузка",
             Display.Error       => "Ошибка",
+            Display.Hashing     => "Проверка",
             _                   => "Ожидание",
         };
         var p = RowBrushes.Current;
@@ -96,6 +99,8 @@ public sealed partial class TorrentViewModel : ObservableObject
             Display.Seeding     => IsSelected ? p.SeedingSelected     : p.Seeding,
             Display.Downloading => IsSelected ? p.DownloadingSelected : p.Downloading,
             Display.Error       => IsSelected ? p.ErrorSelected       : p.Error,
+            // Hashing shares the Idle/Waiting tint — it's a passive-looking state that
+            // the user just triggered; the text "Проверка" carries the meaning.
             _                   => IsSelected ? p.IdleSelected        : p.Idle,
         };
     }
@@ -104,6 +109,7 @@ public sealed partial class TorrentViewModel : ObservableObject
     {
         TorrentState.Seeding                                     => Display.Seeding,
         TorrentState.Error                                       => Display.Error,
+        TorrentState.Hashing                                     => Display.Hashing,
         TorrentState.Downloading when m.Monitor.DownloadRate > 0 => Display.Downloading,
         _                                                        => Display.Waiting,
     };

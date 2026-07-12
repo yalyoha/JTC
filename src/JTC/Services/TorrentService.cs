@@ -172,6 +172,46 @@ public sealed class TorrentService : IAsyncDisposable
         await SaveStateAsync();
     }
 
+    /// <summary>
+    /// Force-rehash every piece of the torrent from disk. Used by the row context-menu
+    /// "Обновить" action — helpful when files have been changed externally or when
+    /// fast-resume data is suspected to be stale. Auto-resumes downloading if the
+    /// torrent was running before the check.
+    /// </summary>
+    public async Task RecheckAsync(TorrentManager manager)
+    {
+        var name = manager.Torrent?.Name ?? "(no metadata)";
+        var startState = manager.State;
+        DebugLog.Info($"RecheckAsync ENTER name='{name}' state={startState}");
+
+        var wasRunning = startState is not TorrentState.Stopped
+                                    and not TorrentState.Paused
+                                    and not TorrentState.Error;
+
+        // HashCheckAsync requires the manager to be in Stopped state. StopAsync with
+        // a 2s timeout matches what RemoveAsync uses — enough for one tracker round,
+        // but doesn't wall for flaky trackers.
+        try
+        {
+            DebugLog.Info($"  Recheck: StopAsync (from state={manager.State})");
+            await manager.StopAsync(TimeSpan.FromSeconds(2));
+            DebugLog.Info($"  Recheck: stopped, state={manager.State}");
+        }
+        catch (Exception ex) { DebugLog.Error("Recheck.Stop", ex); }
+
+        DebugLog.Info($"  Recheck: HashCheckAsync(autoStart={wasRunning}) begin");
+        try
+        {
+            await manager.HashCheckAsync(autoStart: wasRunning);
+            DebugLog.Info($"  Recheck: HashCheckAsync done, state={manager.State}, progress={manager.Progress:F1}%");
+        }
+        catch (Exception ex)
+        {
+            DebugLog.Error("Recheck.HashCheckAsync", ex);
+            throw;
+        }
+    }
+
     public async Task RemoveAsync(TorrentManager manager, bool deleteFilesOnDisk)
     {
         DebugLog.Info($"RemoveAsync ENTER name='{manager.Torrent?.Name}' state={manager.State} deleteFiles={deleteFilesOnDisk}");
