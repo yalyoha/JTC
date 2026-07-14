@@ -87,9 +87,11 @@ public sealed class TorrentService : IAsyncDisposable
         return StartNextIfSlotFreeAsync();
     }
 
-    public async Task<TorrentManager> AddTorrentFileAsync(string torrentPath, string downloadDir, bool startImmediately)
+    public async Task<TorrentManager> AddTorrentFileAsync(
+        string torrentPath, string downloadDir, bool startImmediately,
+        IReadOnlySet<int>? skipFileIndices = null)
     {
-        DebugLog.Info($"AddTorrentFileAsync ENTER path='{torrentPath}' start={startImmediately}");
+        DebugLog.Info($"AddTorrentFileAsync ENTER path='{torrentPath}' start={startImmediately} skip={skipFileIndices?.Count ?? 0}");
         if (!File.Exists(torrentPath))
             throw new FileNotFoundException("Torrent file not found", torrentPath);
         Directory.CreateDirectory(downloadDir);
@@ -107,6 +109,14 @@ public sealed class TorrentService : IAsyncDisposable
             var manager = await AddWithRetryAsync(() => _engine.AddAsync(torrentPath, downloadDir));
             DebugLog.Info($"  Add: engine.AddAsync ok, engine.Torrents.Count after = {_engine.Torrents.Count}");
             WireStateChange(manager);
+
+            // Apply DoNotDownload to unselected files BEFORE StartAsync so the piece picker
+            // never touches their pieces. Setting priority after Start is fine too (MonoTorrent
+            // re-evaluates on next pick) but pre-Start avoids a brief window where the engine
+            // could allocate slots to a file the user doesn't want.
+            if (skipFileIndices is { Count: > 0 })
+                await ApplySkipFilePrioritiesAsync(manager, skipFileIndices);
+
             _persistedByManager[manager] = new PersistedTorrent
             {
                 Source = torrentPath,
@@ -123,6 +133,24 @@ public sealed class TorrentService : IAsyncDisposable
         }
         catch (Exception ex) { DebugLog.Error("AddTorrentFileAsync", ex); throw; }
         finally { _mutation.Release(); DebugLog.Info("  Add: semaphore released"); }
+    }
+
+    private static async Task ApplySkipFilePrioritiesAsync(TorrentManager manager, IReadOnlySet<int> skipIndices)
+    {
+        var files = manager.Files;
+        if (files is null) return;
+        var count = 0;
+        for (int i = 0; i < files.Count; i++)
+        {
+            if (!skipIndices.Contains(i)) continue;
+            try
+            {
+                await manager.SetFilePriorityAsync(files[i], Priority.DoNotDownload);
+                count++;
+            }
+            catch (Exception ex) { DebugLog.Error($"skip file [{i}] {files[i].Path}", ex); }
+        }
+        DebugLog.Info($"  Add: marked {count}/{files.Count} files as DoNotDownload");
     }
 
     public async Task<TorrentManager> AddMagnetAsync(string magnetUri, string downloadDir, bool startImmediately)

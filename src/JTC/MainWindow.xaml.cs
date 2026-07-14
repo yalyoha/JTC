@@ -127,9 +127,35 @@ public sealed partial class MainWindow : Window
         var downloadDir = await GetOrPickDownloadDirAsync();
         if (downloadDir is null) return;
 
+        // For multi-file torrents (typical case: a TV season / album), let the user pick
+        // which files to actually download. Parse the .torrent locally first — this doesn't
+        // engage the engine and won't create a manager, so a Cancel here leaves no state
+        // behind. Single-file torrents skip the dialog entirely (nothing to choose).
+        IReadOnlySet<int>? skipIndices = null;
         try
         {
-            await _service.AddTorrentFileAsync(torrentPath, downloadDir, startImmediately: true);
+            var parsed = await MonoTorrent.Torrent.LoadAsync(torrentPath);
+            if (parsed.Files.Count > 1)
+            {
+                var entries = parsed.Files
+                    .Select((f, i) => new FileSelectionDialog.Entry(i, f.Path, f.Length))
+                    .ToList();
+                var selection = await FileSelectionDialog.ShowAsync(Content.XamlRoot, parsed.Name, entries);
+                if (selection is null)
+                    return; // user cancelled
+                skipIndices = selection;
+            }
+        }
+        catch (Exception ex)
+        {
+            // Parse failure is an add failure too — surface the same error.
+            await ShowErrorAsync("Не удалось прочитать .torrent", ex.Message);
+            return;
+        }
+
+        try
+        {
+            await _service.AddTorrentFileAsync(torrentPath, downloadDir, startImmediately: true, skipIndices);
         }
         catch (Exception ex)
         {
