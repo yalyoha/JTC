@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
@@ -38,6 +39,11 @@ public sealed partial class MainWindow : Window
 
         // Reasonable initial size.
         AppWindow.Resize(new Windows.Graphics.SizeInt32(1000, 640));
+
+        // Prevent the user from shrinking the window past the point where the toolbar
+        // buttons ("Добавить magnet") and header labels ("Прогресс") get squeezed into
+        // a vertical character-per-line stack — see screenshots/img_22.png.
+        InstallMinSizeSubclass();
 
         // Window icon (taskbar + Alt-Tab). The .exe icon is set separately via <ApplicationIcon> in csproj.
         var iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "tclient.ico");
@@ -459,6 +465,65 @@ public sealed partial class MainWindow : Window
             });
         }
         catch { /* best-effort */ }
+    }
+
+    // --- Minimum window size (WM_GETMINMAXINFO subclass) ---------------------------
+    // WinUI 3 / WindowsAppSDK 2.2 has no AppWindow.MinSize; enforce it via a Comctl32
+    // subclass that clamps ptMinTrackSize on every WM_GETMINMAXINFO. Values are in
+    // DIPs and scaled by the window's current DPI so the limit tracks per-monitor DPI
+    // changes automatically (WM_GETMINMAXINFO fires again after WM_DPICHANGED).
+    private const int MinWindowWidthDip  = 780;
+    private const int MinWindowHeightDip = 360;
+
+    private const uint WM_GETMINMAXINFO = 0x0024;
+
+    private delegate IntPtr SUBCLASSPROC(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam, uint uIdSubclass, IntPtr dwRefData);
+
+    [DllImport("Comctl32.dll", SetLastError = true)]
+    private static extern bool SetWindowSubclass(IntPtr hWnd, SUBCLASSPROC pfnSubclass, uint uIdSubclass, IntPtr dwRefData);
+
+    [DllImport("Comctl32.dll")]
+    private static extern IntPtr DefSubclassProc(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("User32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT { public int x; public int y; }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MINMAXINFO
+    {
+        public POINT ptReserved;
+        public POINT ptMaxSize;
+        public POINT ptMaxPosition;
+        public POINT ptMinTrackSize;
+        public POINT ptMaxTrackSize;
+    }
+
+    // Held as a field so the GC doesn't collect the delegate while native code still
+    // holds the function pointer via SetWindowSubclass.
+    private SUBCLASSPROC? _subclassProc;
+
+    private void InstallMinSizeSubclass()
+    {
+        var hwnd = WinRT.Interop.WindowNative.GetWindowHandle(this);
+        _subclassProc = MinSizeWndProc;
+        SetWindowSubclass(hwnd, _subclassProc, 0, IntPtr.Zero);
+    }
+
+    private IntPtr MinSizeWndProc(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam, uint uIdSubclass, IntPtr dwRefData)
+    {
+        if (uMsg == WM_GETMINMAXINFO)
+        {
+            var scale = GetDpiForWindow(hWnd) / 96.0;
+            var mmi = Marshal.PtrToStructure<MINMAXINFO>(lParam);
+            mmi.ptMinTrackSize.x = (int)Math.Ceiling(MinWindowWidthDip  * scale);
+            mmi.ptMinTrackSize.y = (int)Math.Ceiling(MinWindowHeightDip * scale);
+            Marshal.StructureToPtr(mmi, lParam, false);
+            return IntPtr.Zero;
+        }
+        return DefSubclassProc(hWnd, uMsg, wParam, lParam);
     }
 
     private async void SettingsButton_Click(object sender, RoutedEventArgs e)
