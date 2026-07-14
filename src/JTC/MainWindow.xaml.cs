@@ -236,6 +236,24 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>
+    /// Click on empty space inside the ListView (below the last row, header area, scrollbar
+    /// margin) clears selection. WinUI's Extended selection mode has no built-in equivalent —
+    /// once you click a row you can only deselect via Ctrl-click on that same row, which most
+    /// users don't discover.
+    /// </summary>
+    private void TorrentList_Tapped(object sender, Microsoft.UI.Xaml.Input.TappedRoutedEventArgs e)
+    {
+        var node = e.OriginalSource as DependencyObject;
+        while (node is not null)
+        {
+            if (node is Microsoft.UI.Xaml.Controls.ListViewItem)
+                return; // tap landed on a row — let normal selection logic run
+            node = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetParent(node);
+        }
+        TorrentList.SelectedItems.Clear();
+    }
+
+    /// <summary>
     /// Multi-select support: update every VM's IsSelected flag so the row-background brush
     /// reflects the full selection set, not just the primary SelectedItem.
     /// </summary>
@@ -518,10 +536,15 @@ public sealed partial class MainWindow : Window
         {
             ThemeHelper.Apply(RootGrid, updated.Theme);
             ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, updated.Theme);
-            // Cached row brushes belong to the old palette — refresh so each
-            // row picks up the new theme's brushes immediately (otherwise
-            // they'd only update on the next 1-second timer tick).
-            foreach (var vm in ViewModel.Torrents) vm.Refresh();
+            // Cached row brushes belong to the old palette — RefreshBrushes forces every
+            // VM to re-read RowBrushes.Current for its background, status stripe, and
+            // foreground even when its Display state hasn't changed (ApplyDisplay's own
+            // rebuild is state-change-gated, which would otherwise skip a pure theme swap).
+            foreach (var vm in ViewModel.Torrents)
+            {
+                vm.RefreshBrushes();
+                vm.Refresh();
+            }
         }
 
         try

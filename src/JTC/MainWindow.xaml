@@ -94,6 +94,7 @@
                   SelectedItem="{x:Bind ViewModel.SelectedTorrent, Mode=TwoWay}"
                   SelectionMode="Extended"
                   SelectionChanged="TorrentList_SelectionChanged"
+                  Tapped="TorrentList_Tapped"
                   Padding="12,0,12,0">
             <ListView.ItemContainerStyle>
                 <Style TargetType="ListViewItem">
@@ -142,14 +143,13 @@
             </ListView.HeaderTemplate>
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="vm:TorrentViewModel">
-                    <!-- Row background IS the progress bar: RowBackground is a LinearGradientBrush
-                         with a hard seam at Progress%, painted directly on this Grid. No overlay
-                         element, no ProgressBar child needed. Padding is symmetric now. -->
-                    <Grid CornerRadius="4"
-                          Background="{x:Bind RowBackground, Mode=OneWay}"
-                          Padding="8,10,8,10"
-                          DoubleTapped="TorrentRow_DoubleTapped">
-                        <Grid.ContextFlyout>
+                    <!-- Border wraps the row so its CornerRadius clips both the plashka background
+                         (RowBackground gradient) AND the 4px status stripe on the left edge; a
+                         plain Grid.CornerRadius would only clip its own background, not children. -->
+                    <Border CornerRadius="4"
+                            Background="{x:Bind RowBackground, Mode=OneWay}"
+                            DoubleTapped="TorrentRow_DoubleTapped">
+                        <Border.ContextFlyout>
                             <MenuFlyout>
                                 <MenuFlyoutItem Text="Открыть" Click="RowOpen_Click">
                                     <MenuFlyoutItem.Icon>
@@ -168,31 +168,48 @@
                                     </MenuFlyoutItem.Icon>
                                 </MenuFlyoutItem>
                             </MenuFlyout>
-                        </Grid.ContextFlyout>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="2.5*" />
-                            <ColumnDefinition Width="80" />
-                            <ColumnDefinition Width="1.6*" />
-                            <ColumnDefinition Width="100" />
-                            <ColumnDefinition Width="100" />
-                            <ColumnDefinition Width="60" />
-                            <ColumnDefinition Width="120" />
-                        </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" VerticalAlignment="Center"
-                                   Text="{x:Bind Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
-                        <TextBlock Grid.Column="1" VerticalAlignment="Center"
-                                   Text="{x:Bind SizeText, Mode=OneWay}" />
-                        <TextBlock Grid.Column="2" VerticalAlignment="Center"
-                                   Text="{x:Bind ProgressText, Mode=OneWay}" />
-                        <TextBlock Grid.Column="3" VerticalAlignment="Center"
-                                   Text="{x:Bind DownloadRateText, Mode=OneWay}" />
-                        <TextBlock Grid.Column="4" VerticalAlignment="Center"
-                                   Text="{x:Bind UploadRateText, Mode=OneWay}" />
-                        <TextBlock Grid.Column="5" VerticalAlignment="Center"
-                                   Text="{x:Bind PeerCount, Mode=OneWay}" />
-                        <TextBlock Grid.Column="6" VerticalAlignment="Center"
-                                   Text="{x:Bind StateText, Mode=OneWay}" />
-                    </Grid>
+                        </Border.ContextFlyout>
+                        <Grid>
+                            <!-- 4px status stripe on the left edge; visible only outside the
+                                 rounded corners because the parent Border clips it. -->
+                            <Rectangle HorizontalAlignment="Left"
+                                       VerticalAlignment="Stretch"
+                                       Width="4"
+                                       Fill="{x:Bind StatusBrush, Mode=OneWay}" />
+                            <Grid Padding="12,10,12,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="2.5*" />
+                                    <ColumnDefinition Width="80" />
+                                    <ColumnDefinition Width="1.6*" />
+                                    <ColumnDefinition Width="100" />
+                                    <ColumnDefinition Width="100" />
+                                    <ColumnDefinition Width="60" />
+                                    <ColumnDefinition Width="120" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                           Foreground="{x:Bind RowForeground, Mode=OneWay}"
+                                           Text="{x:Bind Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                                           Foreground="{x:Bind RowForeground, Mode=OneWay}"
+                                           Text="{x:Bind SizeText, Mode=OneWay}" />
+                                <TextBlock Grid.Column="2" VerticalAlignment="Center"
+                                           Foreground="{x:Bind RowForeground, Mode=OneWay}"
+                                           Text="{x:Bind ProgressText, Mode=OneWay}" />
+                                <TextBlock Grid.Column="3" VerticalAlignment="Center"
+                                           Foreground="{x:Bind RowForeground, Mode=OneWay}"
+                                           Text="{x:Bind DownloadRateText, Mode=OneWay}" />
+                                <TextBlock Grid.Column="4" VerticalAlignment="Center"
+                                           Foreground="{x:Bind RowForeground, Mode=OneWay}"
+                                           Text="{x:Bind UploadRateText, Mode=OneWay}" />
+                                <TextBlock Grid.Column="5" VerticalAlignment="Center"
+                                           Foreground="{x:Bind RowForeground, Mode=OneWay}"
+                                           Text="{x:Bind PeerCount, Mode=OneWay}" />
+                                <TextBlock Grid.Column="6" VerticalAlignment="Center"
+                                           Foreground="{x:Bind RowForeground, Mode=OneWay}"
+                                           Text="{x:Bind StateText, Mode=OneWay}" />
+                            </Grid>
+                        </Grid>
+                    </Border>
                 </DataTemplate>
             </ListView.ItemTemplate>
         </ListView>

@@ -9,10 +9,13 @@ namespace JTC.ViewModels;
 
 public sealed partial class TorrentViewModel : ObservableObject
 {
-    // The row's Background is a LinearGradientBrush with four stops (fill,fill,bg,bg)
-    // — the two coincident stops at Progress/100 create a sharp visual boundary
-    // between the "done" and "remaining" portions of the row. That way the row itself
-    // IS the progress bar; no separate ProgressBar element is needed.
+    // Row rendering has three moving parts:
+    //   RowBackground — LinearGradientBrush painting the plashka. Fill (left) → Bg (right)
+    //                   with a hard seam at Progress %. Bg and Fill come from the theme.
+    //   StatusBrush   — 4 px left-edge stripe. Neon Material A400 hue per state; identical
+    //                   across themes so the state reads at a glance on white or dark.
+    //   RowForeground — Text color for every TextBlock in the row. Theme-scoped (dark on
+    //                   light plashka, white on dark plashka).
 
     // Simplified user-visible state. Everything the engine reports (Paused, Stopped,
     // Starting, Metadata, Downloading-with-zero-rate, …) collapses to Waiting; Downloading
@@ -37,6 +40,8 @@ public sealed partial class TorrentViewModel : ObservableObject
     [ObservableProperty] private bool _isPaused;
     [ObservableProperty] private bool _isSelected;
     [ObservableProperty] private Brush _rowBackground = new SolidColorBrush();
+    [ObservableProperty] private Brush _statusBrush = new SolidColorBrush();
+    [ObservableProperty] private Brush _rowForeground = new SolidColorBrush();
 
     partial void OnIsSelectedChanged(bool value) => RebuildRowBackground();
     partial void OnProgressChanged(double value) => RebuildRowBackground();
@@ -75,6 +80,11 @@ public sealed partial class TorrentViewModel : ObservableObject
         ApplyDisplay(ComputeDisplay(Manager));
     }
 
+    // Force-rebuild all three brushes without waiting for a state / progress / selection
+    // event. Called after a theme switch — RowBrushes.Current has changed but nothing on
+    // the VM itself did, so none of the OnXxxChanged partials would fire.
+    public void RefreshBrushes() => RebuildRowBackground();
+
     private void OnStateChanged(object? sender, TorrentStateChangedEventArgs e)
     {
         _dispatcher.TryEnqueue(() =>
@@ -108,18 +118,23 @@ public sealed partial class TorrentViewModel : ObservableObject
     private void RebuildRowBackground()
     {
         var p = RowBrushes.Current;
-        var sc = _current switch
-        {
-            Display.Seeding     => p.Seeding,
-            Display.Downloading => p.Downloading,
-            Display.Error       => p.Error,
-            Display.Hashing     => p.Hashing,
-            _                   => p.Idle,
-        };
-        var (bg, fill) = IsSelected
-            ? (sc.BgSelected, sc.FillSelected)
-            : (sc.Bg, sc.Fill);
+        var bg = IsSelected ? p.BgSelected : p.Bg;
+        var fill = IsSelected ? p.FillSelected : p.Fill;
+        // Seeding is 100 % — the whole row would be Fill, but the mockup wants a completed
+        // torrent to render as a plain plashka with no progress artifact. Force Fill = Bg so
+        // the row stays uniform regardless of interpolation offset.
+        if (_current == Display.Seeding) fill = bg;
         RowBackground = BuildRowBrush(bg, fill, Progress);
+
+        StatusBrush = new SolidColorBrush(_current switch
+        {
+            Display.Downloading => RowBrushes.StatusDownloading,
+            Display.Seeding     => RowBrushes.StatusSeeding,
+            Display.Hashing     => RowBrushes.StatusHashing,
+            Display.Error       => RowBrushes.StatusError,
+            _                   => RowBrushes.StatusIdle,
+        });
+        RowForeground = new SolidColorBrush(p.Fg);
     }
 
     // Four gradient stops with two pairs sharing an offset produce a hard vertical

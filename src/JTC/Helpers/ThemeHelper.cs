@@ -12,7 +12,7 @@ public static class ThemeHelper
     private static readonly Color BrandTop    = Color.FromArgb(0xFF, 0xE5, 0x2E, 0x71);
     private static readonly Color BrandBottom = Color.FromArgb(0xFF, 0xFF, 0x8A, 0x00);
     private static readonly Color DarkSolid   = Color.FromArgb(0xFF, 0x21, 0x21, 0x21);
-    private static readonly Color LightSolid  = Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF);
+    private static readonly Color LightSolid  = Color.FromArgb(0xFF, 0xF2, 0xF2, 0xF2);
 
     private static LinearGradientBrush BrandGradient()
     {
