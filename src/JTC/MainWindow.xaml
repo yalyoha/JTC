@@ -142,7 +142,12 @@
             </ListView.HeaderTemplate>
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="vm:TorrentViewModel">
-                    <Grid CornerRadius="4" Background="{x:Bind RowBackground, Mode=OneWay}"
+                    <!-- Row background IS the progress bar: RowBackground is a LinearGradientBrush
+                         with a hard seam at Progress%, painted directly on this Grid. No overlay
+                         element, no ProgressBar child needed. Padding is symmetric now. -->
+                    <Grid CornerRadius="4"
+                          Background="{x:Bind RowBackground, Mode=OneWay}"
+                          Padding="8,10,8,10"
                           DoubleTapped="TorrentRow_DoubleTapped">
                         <Grid.ContextFlyout>
                             <MenuFlyout>
@@ -164,50 +169,29 @@
                                 </MenuFlyoutItem>
                             </MenuFlyout>
                         </Grid.ContextFlyout>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="2" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
-
-                        <!-- Progress bar as the top "border" of the row — grows green from
-                             left as download advances. When 0% it's invisible (transparent
-                             track); at 100% it fills the whole top edge. -->
-                        <ProgressBar Grid.Row="0"
-                                     Value="{x:Bind Progress, Mode=OneWay}"
-                                     Maximum="100"
-                                     Height="2"
-                                     MinHeight="2"
-                                     Background="Transparent"
-                                     Foreground="#4CD964"
-                                     CornerRadius="0" />
-
-                        <!-- Bottom padding 12 = 10 (base) + 2 (compensate for the top progress-bar row)
-                             so the text baseline sits at the visual middle of the whole row. -->
-                        <Grid Grid.Row="1" Padding="8,10,8,12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="2.5*" />
-                                <ColumnDefinition Width="80" />
-                                <ColumnDefinition Width="1.6*" />
-                                <ColumnDefinition Width="100" />
-                                <ColumnDefinition Width="100" />
-                                <ColumnDefinition Width="60" />
-                                <ColumnDefinition Width="120" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" VerticalAlignment="Center"
-                                       Text="{x:Bind Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
-                            <TextBlock Grid.Column="1" VerticalAlignment="Center"
-                                       Text="{x:Bind SizeText, Mode=OneWay}" />
-                            <TextBlock Grid.Column="2" VerticalAlignment="Center"
-                                       Text="{x:Bind ProgressText, Mode=OneWay}" />
-                            <TextBlock Grid.Column="3" VerticalAlignment="Center"
-                                       Text="{x:Bind DownloadRateText, Mode=OneWay}" />
-                            <TextBlock Grid.Column="4" VerticalAlignment="Center"
-                                       Text="{x:Bind UploadRateText, Mode=OneWay}" />
-                            <TextBlock Grid.Column="5" VerticalAlignment="Center"
-                                       Text="{x:Bind PeerCount, Mode=OneWay}" />
-                            <TextBlock Grid.Column="6" VerticalAlignment="Center"
-                                       Text="{x:Bind StateText, Mode=OneWay}" />
-                        </Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="2.5*" />
+                            <ColumnDefinition Width="80" />
+                            <ColumnDefinition Width="1.6*" />
+                            <ColumnDefinition Width="100" />
+                            <ColumnDefinition Width="100" />
+                            <ColumnDefinition Width="60" />
+                            <ColumnDefinition Width="120" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                   Text="{x:Bind Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                                   Text="{x:Bind SizeText, Mode=OneWay}" />
+                        <TextBlock Grid.Column="2" VerticalAlignment="Center"
+                                   Text="{x:Bind ProgressText, Mode=OneWay}" />
+                        <TextBlock Grid.Column="3" VerticalAlignment="Center"
+                                   Text="{x:Bind DownloadRateText, Mode=OneWay}" />
+                        <TextBlock Grid.Column="4" VerticalAlignment="Center"
+                                   Text="{x:Bind UploadRateText, Mode=OneWay}" />
+                        <TextBlock Grid.Column="5" VerticalAlignment="Center"
+                                   Text="{x:Bind PeerCount, Mode=OneWay}" />
+                        <TextBlock Grid.Column="6" VerticalAlignment="Center"
+                                   Text="{x:Bind StateText, Mode=OneWay}" />
                     </Grid>
                 </DataTemplate>
             </ListView.ItemTemplate>

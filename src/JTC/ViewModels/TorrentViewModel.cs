@@ -2,17 +2,17 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml.Media;
 using MonoTorrent.Client;
+using Windows.UI;
 using JTC.Helpers;
 
 namespace JTC.ViewModels;
 
 public sealed partial class TorrentViewModel : ObservableObject
 {
-    // Per-state row-background brushes come from RowBrushes.Current, which
-    // switches with the app theme. All variants are semi-transparent so the
-    // theme background still reads through. Because our own Grid draws the
-    // background, the highlight matches the row's corner radius exactly (the
-    // container's built-in selection background is turned off in MainWindow.xaml).
+    // The row's Background is a LinearGradientBrush with four stops (fill,fill,bg,bg)
+    // — the two coincident stops at Progress/100 create a sharp visual boundary
+    // between the "done" and "remaining" portions of the row. That way the row itself
+    // IS the progress bar; no separate ProgressBar element is needed.
 
     // Simplified user-visible state. Everything the engine reports (Paused, Stopped,
     // Starting, Metadata, Downloading-with-zero-rate, …) collapses to Waiting; Downloading
@@ -22,6 +22,7 @@ public sealed partial class TorrentViewModel : ObservableObject
     private enum Display { Waiting, Downloading, Seeding, Error, Hashing }
 
     private readonly DispatcherQueue _dispatcher;
+    private Display _current = Display.Waiting;
 
     public TorrentManager Manager { get; }
 
@@ -32,12 +33,13 @@ public sealed partial class TorrentViewModel : ObservableObject
     [ObservableProperty] private string _downloadRateText = "—";
     [ObservableProperty] private string _uploadRateText = "—";
     [ObservableProperty] private int _peerCount;
-    [ObservableProperty] private string _stateText = "";
+    [ObservableProperty] private string _stateText = "Ожидание";
     [ObservableProperty] private bool _isPaused;
     [ObservableProperty] private bool _isSelected;
-    [ObservableProperty] private Brush _rowBackground = RowBrushes.Current.Idle;
+    [ObservableProperty] private Brush _rowBackground = new SolidColorBrush();
 
-    partial void OnIsSelectedChanged(bool value) => ApplyDisplay(ComputeDisplay(Manager));
+    partial void OnIsSelectedChanged(bool value) => RebuildRowBackground();
+    partial void OnProgressChanged(double value) => RebuildRowBackground();
 
     public TorrentViewModel(TorrentManager manager, DispatcherQueue dispatcher)
     {
@@ -47,6 +49,7 @@ public sealed partial class TorrentViewModel : ObservableObject
         Name = manager.Torrent?.Name ?? "(загрузка метаданных…)";
         SizeText = manager.Torrent is null ? "—" : Formatting.BytesToHuman(manager.Torrent.Size);
         ApplyDisplay(ComputeDisplay(manager));
+        RebuildRowBackground();
 
         manager.TorrentStateChanged += OnStateChanged;
     }
@@ -60,6 +63,9 @@ public sealed partial class TorrentViewModel : ObservableObject
             SizeText = Formatting.BytesToHuman(Manager.Torrent.Size);
         }
 
+        // Set Progress before ApplyDisplay so OnProgressChanged fires against the
+        // fresh Progress value; when the state also changes, ApplyDisplay's own
+        // RebuildRowBackground picks up the new state with the already-fresh progress.
         Progress = Manager.Progress;
         ProgressText = $"{Manager.Progress:F1}%";
         DownloadRateText = Formatting.RateToHuman(Manager.Monitor.DownloadRate);
@@ -85,6 +91,9 @@ public sealed partial class TorrentViewModel : ObservableObject
 
     private void ApplyDisplay(Display d)
     {
+        if (_current == d)
+            return;
+        _current = d;
         StateText = d switch
         {
             Display.Seeding     => "Раздача",
@@ -93,16 +102,42 @@ public sealed partial class TorrentViewModel : ObservableObject
             Display.Hashing     => "Проверка",
             _                   => "Ожидание",
         };
+        RebuildRowBackground();
+    }
+
+    private void RebuildRowBackground()
+    {
         var p = RowBrushes.Current;
-        RowBackground = d switch
+        var sc = _current switch
         {
-            Display.Seeding     => IsSelected ? p.SeedingSelected     : p.Seeding,
-            Display.Downloading => IsSelected ? p.DownloadingSelected : p.Downloading,
-            Display.Error       => IsSelected ? p.ErrorSelected       : p.Error,
-            // Hashing shares the Idle/Waiting tint — it's a passive-looking state that
-            // the user just triggered; the text "Проверка" carries the meaning.
-            _                   => IsSelected ? p.IdleSelected        : p.Idle,
+            Display.Seeding     => p.Seeding,
+            Display.Downloading => p.Downloading,
+            Display.Error       => p.Error,
+            Display.Hashing     => p.Hashing,
+            _                   => p.Idle,
         };
+        var (bg, fill) = IsSelected
+            ? (sc.BgSelected, sc.FillSelected)
+            : (sc.Bg, sc.Fill);
+        RowBackground = BuildRowBrush(bg, fill, Progress);
+    }
+
+    // Four gradient stops with two pairs sharing an offset produce a hard vertical
+    // seam at Progress% — visually two solid bands, not a gradient. Clamp keeps the
+    // seam inside [0,1] even when Progress briefly reads outside 0..100.
+    private static LinearGradientBrush BuildRowBrush(Color bg, Color fill, double progress)
+    {
+        var p = Math.Clamp(progress / 100.0, 0.0, 1.0);
+        var brush = new LinearGradientBrush
+        {
+            StartPoint = new Windows.Foundation.Point(0, 0),
+            EndPoint   = new Windows.Foundation.Point(1, 0),
+        };
+        brush.GradientStops.Add(new GradientStop { Color = fill, Offset = 0 });
+        brush.GradientStops.Add(new GradientStop { Color = fill, Offset = p });
+        brush.GradientStops.Add(new GradientStop { Color = bg,   Offset = p });
+        brush.GradientStops.Add(new GradientStop { Color = bg,   Offset = 1 });
+        return brush;
     }
 
     private static Display ComputeDisplay(TorrentManager m) => m.State switch

@@ -43,6 +43,14 @@ public static class ThemeHelper
     {
         dialog.RequestedTheme = theme == AppTheme.Light ? ElementTheme.Light : ElementTheme.Dark;
 
+        // Dialogs live on the XamlRoot popup surface, which does not inherit FontFamily
+        // from RootGrid. The Application-level ContentControlThemeFontFamily override
+        // usually reaches here through the ContentDialog's template, but templates in
+        // some builds copy the default at compile-time; setting FontFamily directly
+        // guarantees Ubuntu regardless.
+        if (Application.Current.Resources["AppFontFamily"] is FontFamily appFont)
+            dialog.FontFamily = appFont;
+
         if (theme != AppTheme.Brand)
             return;
 
