@@ -80,6 +80,55 @@ public class StateStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveAsync_ThenLoadAsync_RoundTripsSkipFileIndices()
+    {
+        var store = new StateStore(_tempDir);
+        var items = new List<PersistedTorrent>
+        {
+            new()
+            {
+                Source = @"C:\downloads\pack.torrent",
+                SourceKind = PersistedSourceKind.TorrentFile,
+                DownloadDir = @"D:\Downloads",
+                Paused = false,
+                SkipFileIndices = new[] { 0, 3, 7 },
+            },
+        };
+
+        await store.SaveAsync(items);
+        var loaded = await store.LoadAsync();
+
+        Assert.Single(loaded);
+        Assert.NotNull(loaded[0].SkipFileIndices);
+        Assert.Equal(new[] { 0, 3, 7 }, loaded[0].SkipFileIndices);
+    }
+
+    [Fact]
+    public async Task LoadAsync_LegacyRecordWithoutSkipFileIndices_LoadsWithNull()
+    {
+        // Regression: torrents.json written by pre-task-7 builds has no "SkipFileIndices"
+        // field. Deserialisation must not throw and must yield SkipFileIndices == null so
+        // legacy records default to "download everything".
+        const string legacyJson = """
+        [
+          {
+            "Source": "C:/downloads/old.torrent",
+            "SourceKind": "TorrentFile",
+            "DownloadDir": "D:/Downloads",
+            "Paused": false
+          }
+        ]
+        """;
+        await File.WriteAllTextAsync(Path.Combine(_tempDir, "torrents.json"), legacyJson);
+        var store = new StateStore(_tempDir);
+        var loaded = await store.LoadAsync();
+
+        Assert.Single(loaded);
+        Assert.Null(loaded[0].SkipFileIndices);
+        Assert.Equal("C:/downloads/old.torrent", loaded[0].Source);
+    }
+
+    [Fact]
     public async Task SaveAsync_ManyParallelWriters_DoNotThrowAndLeaveValidJson()
     {
         // Regression: without the SemaphoreSlim + unique temp file, overlapping writers

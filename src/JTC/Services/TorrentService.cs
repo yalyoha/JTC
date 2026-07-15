@@ -195,6 +195,12 @@ public sealed class TorrentService : IAsyncDisposable
                 SourceKind = PersistedSourceKind.TorrentFile,
                 DownloadDir = downloadDir,
                 Paused = !startImmediately,
+                // Persist skip selection so a restart of the app doesn't quietly re-enable
+                // download of files the user explicitly excluded. Normalise to a sorted
+                // int[] so the JSON diff is stable and predictable.
+                SkipFileIndices = skipFileIndices is { Count: > 0 }
+                    ? skipFileIndices.OrderBy(i => i).ToArray()
+                    : null,
             };
             TorrentAdded?.Invoke(this, manager);
             if (startImmediately && CanStartMore())
@@ -386,7 +392,17 @@ public sealed class TorrentService : IAsyncDisposable
                 {
                     case PersistedSourceKind.TorrentFile:
                         if (File.Exists(item.Source))
-                            await AddTorrentFileAsync(item.Source, item.DownloadDir, startImmediately: !item.Paused);
+                        {
+                            // Rehydrate the file-selection so the piece-picker keeps skipping
+                            // files the user excluded at first add. Magnet path stays without
+                            // skip support: metadata isn't guaranteed at add time, and the
+                            // add API used for magnets doesn't accept the skip set.
+                            IReadOnlySet<int>? skip = null;
+                            if (item.SkipFileIndices is { Length: > 0 })
+                                skip = new HashSet<int>(item.SkipFileIndices);
+                            await AddTorrentFileAsync(item.Source, item.DownloadDir,
+                                startImmediately: !item.Paused, skipFileIndices: skip);
+                        }
                         break;
                     case PersistedSourceKind.Magnet:
                         await AddMagnetAsync(item.Source, item.DownloadDir, startImmediately: !item.Paused);
