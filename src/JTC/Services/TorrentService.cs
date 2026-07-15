@@ -49,6 +49,14 @@ public sealed class TorrentService : IAsyncDisposable
     // 10 s is a compromise: dense enough to see ramp-up curves after Add, sparse enough
     // that debug.log's 1 MB rotation lasts many hours on a single active torrent.
     private readonly System.Threading.Timer _diagTimer;
+
+    // Watchdog state per manager: current retry budget + backoff schedule.
+    // Lives keyed by TorrentManager because the policy is torrent-scoped (removing a
+    // torrent should forget its history; a fresh add starts with a clean budget).
+    // Access is only from the state-changed event handler → no lock needed as long as
+    // we never hop threads inside a single OnManagerStateChanged invocation.
+    private readonly Dictionary<TorrentManager, TorrentRestartPolicy> _restartPolicies = new();
+
     private bool _disposed;
 
     public event EventHandler<TorrentManager>? TorrentAdded;
@@ -314,6 +322,7 @@ public sealed class TorrentService : IAsyncDisposable
             finally
             {
                 _persistedByManager.Remove(manager);
+                _restartPolicies.Remove(manager);
                 TorrentRemoved?.Invoke(this, manager);
                 try { await SaveStateAsync(); }
                 catch (Exception ex) { DebugLog.Error("SaveStateAsync in remove finally", ex); }
@@ -461,17 +470,32 @@ public sealed class TorrentService : IAsyncDisposable
 
     private async void OnManagerStateChanged(object? sender, TorrentStateChangedEventArgs e)
     {
+        var manager = sender as TorrentManager;
+
+        // A successful re-entry into a downloading state means the previous retry cycle
+        // (if any) worked. Reset the policy so the next stall gets a fresh 5-attempt budget.
+        if (manager is not null && !WasDownloading(e.OldState) && WasDownloading(e.NewState))
+        {
+            if (_restartPolicies.TryGetValue(manager, out var priorPolicy))
+                priorPolicy.RecordSuccess();
+        }
+
         // Diagnostic: capture Error-state transitions with the underlying cause so post-mortem
         // has a concrete exception to look at instead of just "torrent went red". Done outside
         // the try/catch below so a logging bug can't silently be swallowed.
-        if (e.NewState == TorrentState.Error && sender is TorrentManager errored)
+        if (e.NewState == TorrentState.Error && manager is not null)
         {
-            var name = errored.Torrent?.Name ?? "(no metadata)";
-            var ex = errored.Error?.Exception;
+            var name = manager.Torrent?.Name ?? "(no metadata)";
+            var ex = manager.Error?.Exception;
             if (ex is not null)
                 DebugLog.Error($"torrent -> Error '{name}'", ex);
             else
                 DebugLog.Info($"torrent -> Error '{name}' (no manager.Error captured)");
+
+            // Fire-and-forget the recovery attempt — we're already inside an async void handler
+            // and the delay in the watchdog is measured in seconds. Errors inside the watchdog
+            // are logged there, not surfaced back up here.
+            _ = TryRestartAfterErrorAsync(manager);
         }
 
         try
@@ -484,6 +508,73 @@ public sealed class TorrentService : IAsyncDisposable
         {
             // Was silently swallowed before task 4. Log so we can see why StartNextIfSlotFreeAsync failed.
             DebugLog.Error("OnManagerStateChanged.StartNextIfSlotFreeAsync", ex);
+        }
+    }
+
+    // Watchdog: if a manager fell into Error, wait the policy's backoff and try to restart.
+    // Attempts 1–3 do a plain StartAsync (fastest path — often the underlying condition has
+    // resolved by itself). Attempts 4+ throw a HashCheckAsync in first, in case data on disk
+    // no longer matches fast-resume state (e.g. an external tool touched the files during the
+    // outage). Fatal exceptions from manager.Error skip the whole retry cycle.
+    private async Task TryRestartAfterErrorAsync(TorrentManager manager)
+    {
+        try
+        {
+            if (!_restartPolicies.TryGetValue(manager, out var policy))
+            {
+                policy = new TorrentRestartPolicy();
+                _restartPolicies[manager] = policy;
+            }
+
+            var originalException = manager.Error?.Exception;
+            if (TorrentRestartPolicy.IsFatalException(originalException))
+            {
+                policy.MarkFatal();
+                DebugLog.Info($"watchdog '{manager.Torrent?.Name}': fatal error, no retries " +
+                              $"({originalException?.GetType().Name}: {originalException?.Message})");
+                return;
+            }
+
+            if (!policy.TryReserveNextAttempt(out var delay))
+            {
+                DebugLog.Info($"watchdog '{manager.Torrent?.Name}': retry budget exhausted after " +
+                              $"{policy.AttemptsUsed} attempts");
+                return;
+            }
+
+            var attemptNum = policy.AttemptsUsed; // reflects the attempt we just reserved
+            DebugLog.Info($"watchdog '{manager.Torrent?.Name}': scheduling attempt {attemptNum}/{TorrentRestartPolicy.MaxAttempts} " +
+                          $"in {delay.TotalSeconds:F0}s");
+            await Task.Delay(delay);
+
+            // If someone removed the torrent while we slept, bail out silently.
+            if (_disposed || !_engine.Torrents.Any(t => ReferenceEquals(t, manager)))
+                return;
+
+            // Only act if the torrent is still stuck in Error. Any other state means either the
+            // user intervened (Pause/Recheck) or it already recovered on its own.
+            if (manager.State != TorrentState.Error)
+            {
+                DebugLog.Info($"watchdog '{manager.Torrent?.Name}': no longer in Error (now {manager.State}), skipping");
+                return;
+            }
+
+            if (attemptNum >= 4)
+            {
+                DebugLog.Info($"watchdog '{manager.Torrent?.Name}': attempt {attemptNum}, doing HashCheck before start");
+                try { await manager.HashCheckAsync(autoStart: true); }
+                catch (Exception ex) { DebugLog.Error("watchdog HashCheckAsync", ex); }
+            }
+            else
+            {
+                DebugLog.Info($"watchdog '{manager.Torrent?.Name}': attempt {attemptNum}, StartAsync");
+                try { await manager.StartAsync(); }
+                catch (Exception ex) { DebugLog.Error("watchdog StartAsync", ex); }
+            }
+        }
+        catch (Exception ex)
+        {
+            DebugLog.Error("watchdog outer", ex);
         }
     }
 
