@@ -21,6 +21,19 @@ public sealed class TorrentService : IAsyncDisposable
     // not conflicting with other common apps.
     private const int PeerListenPort = 51413;
 
+    // Per-torrent connection cap. MonoTorrent's default per-torrent limit is much lower
+    // than the engine-wide MaximumConnections=500 above, so a single hot torrent leaves
+    // most of the global peer budget idle. 200 lets one torrent claim a large share
+    // without saturating Windows' half-open TCP limit (~50) or starving a second torrent
+    // if the user adds one — two active torrents can still fit under the global 500.
+    private const int PerTorrentMaxConnections = 200;
+
+    // Per-torrent upload slots. Raising slots above the MonoTorrent default helps our
+    // typical single-torrent workload get better tit-for-tat reciprocity from peers,
+    // which improves download throughput. 16 is conservative — high enough to matter
+    // on a 200-peer swarm, low enough to leave upload bandwidth for other traffic.
+    private const int PerTorrentUploadSlots = 16;
+
     private readonly ClientEngine _engine;
     private readonly StateStore _store;
     private readonly Dictionary<TorrentManager, PersistedTorrent> _persistedByManager = new();
@@ -106,7 +119,7 @@ public sealed class TorrentService : IAsyncDisposable
                 throw new InvalidOperationException("Этот торрент уже добавлен.");
             }
             DebugLog.Info($"  Add: engine.Torrents.Count before = {_engine.Torrents.Count}");
-            var manager = await AddWithRetryAsync(() => _engine.AddAsync(torrentPath, downloadDir));
+            var manager = await AddWithRetryAsync(() => _engine.AddAsync(torrentPath, downloadDir, BuildTorrentSettings()));
             DebugLog.Info($"  Add: engine.AddAsync ok, engine.Torrents.Count after = {_engine.Torrents.Count}");
             WireStateChange(manager);
 
@@ -165,7 +178,7 @@ public sealed class TorrentService : IAsyncDisposable
             if (IsAlreadyTracked(magnetUri))
                 throw new InvalidOperationException("Этот magnet уже добавлен.");
 
-            var manager = await AddWithRetryAsync(() => _engine.AddAsync(link, downloadDir));
+            var manager = await AddWithRetryAsync(() => _engine.AddAsync(link, downloadDir, BuildTorrentSettings()));
             WireStateChange(manager);
             _persistedByManager[manager] = new PersistedTorrent
             {
@@ -510,4 +523,20 @@ public sealed class TorrentService : IAsyncDisposable
     private static bool IsAlreadyRegistered(Exception ex) =>
         ex.Message.Contains("already been registered", StringComparison.OrdinalIgnoreCase)
         || ex.Message.Contains("already registered", StringComparison.OrdinalIgnoreCase);
+
+    // Per-torrent settings passed to _engine.AddAsync. Without an explicit settings
+    // argument the engine assigns MonoTorrent's default per-torrent connection cap,
+    // which is far below our engine-wide MaximumConnections=500 — so a single hot
+    // torrent used to stall long before it approached the global budget. See the
+    // PerTorrentMaxConnections / PerTorrentUploadSlots constants at the top for why
+    // these numbers were chosen. DHT and PeX are pinned true explicitly so future
+    // MonoTorrent default flips can't silently disable peer discovery on us.
+    private static TorrentSettings BuildTorrentSettings() =>
+        new TorrentSettingsBuilder
+        {
+            MaximumConnections = PerTorrentMaxConnections,
+            UploadSlots = PerTorrentUploadSlots,
+            AllowDht = true,
+            AllowPeerExchange = true,
+        }.ToSettings();
 }
