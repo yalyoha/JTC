@@ -78,4 +78,41 @@ public class StateStoreTests : IDisposable
         var loaded = await store.LoadAsync();
         Assert.Empty(loaded);
     }
+
+    [Fact]
+    public async Task SaveAsync_ManyParallelWriters_DoNotThrowAndLeaveValidJson()
+    {
+        // Regression: without the SemaphoreSlim + unique temp file, overlapping writers
+        // used to race on the shared "torrents.json.tmp" path and throw IOException, or
+        // (worse) leave a torn file behind. This spawns a burst of concurrent writes,
+        // each with different content, and checks that (a) none throws, and (b) the
+        // final on-disk state parses back to *one of* the written payloads intact.
+        var store = new StateStore(_tempDir);
+        var writers = Enumerable.Range(0, 40).Select(i => Task.Run(async () =>
+        {
+            var items = new List<PersistedTorrent>
+            {
+                new()
+                {
+                    Source = $"C:/dl/writer_{i}.torrent",
+                    SourceKind = PersistedSourceKind.TorrentFile,
+                    DownloadDir = $@"D:\Downloads\writer_{i}",
+                    Paused = i % 2 == 0,
+                },
+            };
+            await store.SaveAsync(items);
+        })).ToArray();
+
+        await Task.WhenAll(writers);
+
+        var loaded = await store.LoadAsync();
+        Assert.Single(loaded);
+        Assert.StartsWith("C:/dl/writer_", loaded[0].Source);
+        Assert.EndsWith(".torrent", loaded[0].Source);
+
+        // And no stray temp files left behind (cleanup happens either in the atomic Move
+        // or in SaveAsync's error-path try/catch).
+        var strayTemps = Directory.GetFiles(_tempDir, "*.tmp");
+        Assert.Empty(strayTemps);
+    }
 }

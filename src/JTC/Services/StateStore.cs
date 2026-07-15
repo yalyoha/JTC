@@ -13,6 +13,11 @@ public sealed class StateStore
     };
 
     private readonly string _directory;
+    // Serialises overlapping SaveAsync calls. Two concurrent writers used to race on the
+    // shared "torrents.json.tmp" path (from OnManagerStateChanged bursts firing multiple
+    // SaveStateAsync calls at once) → IOException and, worst case, a torn JSON left behind
+    // after a mid-serialize crash. Instance-scoped: one StateStore per app process.
+    private readonly SemaphoreSlim _writeLock = new(1, 1);
 
     public StateStore(string directory)
     {
@@ -41,11 +46,33 @@ public sealed class StateStore
     public async Task SaveAsync(IReadOnlyList<PersistedTorrent> items)
     {
         Directory.CreateDirectory(_directory);
-        var tmp = FilePath + ".tmp";
-        await using (var stream = File.Create(tmp))
+        await _writeLock.WaitAsync();
+        try
         {
-            await JsonSerializer.SerializeAsync(stream, items, Options);
+            // Unique per-write temp file. The shared "*.tmp" path caused overlapping
+            // writers to clobber each other's in-flight streams; a fresh random name
+            // per call means each writer owns its own temp until the atomic Move.
+            var tmp = Path.Combine(_directory, Path.GetRandomFileName() + ".tmp");
+            try
+            {
+                await using (var stream = File.Create(tmp))
+                {
+                    await JsonSerializer.SerializeAsync(stream, items, Options);
+                }
+                File.Move(tmp, FilePath, overwrite: true);
+            }
+            catch
+            {
+                // Ensure we don't litter the directory with orphaned temps if the
+                // serialize step blew up before Move. Swallow best-effort — deletion
+                // failure of a temp file must not mask the real error.
+                try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+                throw;
+            }
         }
-        File.Move(tmp, FilePath, overwrite: true);
+        finally
+        {
+            _writeLock.Release();
+        }
     }
 }
