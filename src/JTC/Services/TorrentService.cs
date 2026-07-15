@@ -1,4 +1,5 @@
 using System.Net;
+using System.Reflection;
 using JTC.Helpers;
 using MonoTorrent;
 using MonoTorrent.Client;
@@ -49,6 +50,23 @@ public sealed class TorrentService : IAsyncDisposable
     // 10 s is a compromise: dense enough to see ramp-up curves after Add, sparse enough
     // that debug.log's 1 MB rotation lasts many hours on a single active torrent.
     private readonly System.Threading.Timer _diagTimer;
+
+    // Periodic fast-resume flush. Without this, MonoTorrent's AutoSaveLoadFastResume only
+    // writes fast-resume data on a clean StopAsync — so a hard kill / crash forces a full
+    // re-hash on the next launch (slow start, zero download speed until the hash finishes).
+    // 45 s is between the plan's 30–60 s window: dense enough to keep the potential re-hash
+    // window short, sparse enough not to hammer HDDs / SMR drives with metadata writes.
+    private readonly System.Threading.Timer _fastResumeTimer;
+
+    // The Save method is internal in MonoTorrent 3.0.2 (there's a compiler-generated
+    // <SaveFastResumeAsync>d__229 state machine in MonoTorrent.Client.dll, but no public
+    // TorrentManager.SaveFastResumeAsync member). We reach it via reflection, resolved once
+    // on the first tick and cached. Null after first-tick means the method wasn't found —
+    // we log once and stop trying. Reflection makes us fragile to future MonoTorrent
+    // renames, but the alternative (full re-hash on every crash) is worse.
+    private MethodInfo? _saveFastResumeMethod;
+    private bool _fastResumeReflectionAttempted;
+    private bool _fastResumeUnavailableLogged;
 
     // Watchdog state per manager: current retry budget + backoff schedule.
     // Lives keyed by TorrentManager because the policy is torrent-scoped (removing a
@@ -120,6 +138,13 @@ public sealed class TorrentService : IAsyncDisposable
             LogDiagnosticsTick, null,
             dueTime: TimeSpan.FromSeconds(15),
             period: TimeSpan.FromSeconds(10));
+
+        // First tick after 45 s — no point saving fast-resume before we've downloaded
+        // anything worth resuming from. Then every 45 s.
+        _fastResumeTimer = new System.Threading.Timer(
+            FastResumeTick, null,
+            dueTime: TimeSpan.FromSeconds(45),
+            period: TimeSpan.FromSeconds(45));
     }
 
     /// <summary>
@@ -464,6 +489,7 @@ public sealed class TorrentService : IAsyncDisposable
             return;
         _disposed = true;
         await _diagTimer.DisposeAsync();
+        await _fastResumeTimer.DisposeAsync();
         foreach (var mgr in _engine.Torrents)
             mgr.TorrentStateChanged -= OnManagerStateChanged;
         await _engine.StopAllAsync();
@@ -670,6 +696,84 @@ public sealed class TorrentService : IAsyncDisposable
     {
         if (string.IsNullOrEmpty(name)) return "(no metadata)";
         return name.Length <= 60 ? name : name.Substring(0, 57) + "…";
+    }
+
+    // Timer tick: for each Downloading/Seeding torrent, ask MonoTorrent to flush its
+    // fast-resume snapshot to EngineSettings.FastResumeCacheDirectory. The method is
+    // internal so we invoke by reflection — see field comments on _saveFastResumeMethod.
+    private void FastResumeTick(object? _)
+    {
+        if (_disposed) return;
+        try
+        {
+            var method = ResolveSaveFastResumeMethod();
+            if (method is null) return;
+
+            var snapshot = _engine.Torrents.ToArray();
+            var saved = 0;
+            foreach (var m in snapshot)
+            {
+                // Only bother with torrents that actually have progress worth resuming.
+                // Downloading = mid-flight; Seeding = 100% but the fast-resume still saves
+                // us the recheck on the next start.
+                if (m.State is not TorrentState.Downloading and not TorrentState.Seeding)
+                    continue;
+
+                try
+                {
+                    var result = method.Invoke(m, null);
+                    if (result is Task task)
+                    {
+                        // Don't block the timer thread; if the save is slow (SMR drive
+                        // flush), wait up to 10 s so back-to-back ticks can't overlap.
+                        if (!task.Wait(TimeSpan.FromSeconds(10)))
+                            DebugLog.Info($"fast-resume '{ShortName(m.Torrent?.Name)}': save timed out (>10s)");
+                        else
+                            saved++;
+                    }
+                    else
+                    {
+                        saved++;
+                    }
+                }
+                catch (TargetInvocationException tie)
+                {
+                    DebugLog.Error($"fast-resume '{ShortName(m.Torrent?.Name)}'", tie.InnerException ?? tie);
+                }
+                catch (Exception ex)
+                {
+                    DebugLog.Error($"fast-resume '{ShortName(m.Torrent?.Name)}'", ex);
+                }
+            }
+            if (saved > 0)
+                DebugLog.Info($"fast-resume: saved {saved}/{snapshot.Length} torrents");
+        }
+        catch (Exception ex) { DebugLog.Error("fast-resume tick", ex); }
+    }
+
+    private MethodInfo? ResolveSaveFastResumeMethod()
+    {
+        if (_fastResumeReflectionAttempted) return _saveFastResumeMethod;
+        _fastResumeReflectionAttempted = true;
+
+        // MonoTorrent 3.0.2 keeps SaveFastResumeAsync as internal — GetMethod with
+        // NonPublic flag reaches it. Signature is expected to be () -> Task or
+        // () -> Task<FastResume>; the return-type isn't checked, only param-less.
+        var mi = typeof(TorrentManager).GetMethod(
+            "SaveFastResumeAsync",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
+            binder: null,
+            types: Type.EmptyTypes,
+            modifiers: null);
+
+        if (mi is null && !_fastResumeUnavailableLogged)
+        {
+            _fastResumeUnavailableLogged = true;
+            DebugLog.Info("fast-resume: TorrentManager.SaveFastResumeAsync() not found via reflection — " +
+                          "MonoTorrent may have renamed it. Falling back to AutoSaveLoadFastResume on Stop only.");
+        }
+        _saveFastResumeMethod = mi;
+        return mi;
     }
 
     private async Task StartNextIfSlotFreeAsync()
