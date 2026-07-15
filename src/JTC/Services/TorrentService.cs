@@ -57,6 +57,14 @@ public sealed class TorrentService : IAsyncDisposable
     // we never hop threads inside a single OnManagerStateChanged invocation.
     private readonly Dictionary<TorrentManager, TorrentRestartPolicy> _restartPolicies = new();
 
+    // Cached AppSettings. Prior code called SettingsStore.Load() (synchronous disk read)
+    // from CanStartMore() inside a while-loop on the hot queue path — every state
+    // transition would re-read the same JSON. Now we snapshot at construction and refresh
+    // on ApplySettingsAsync; hot path is a plain memory read. Volatile-not-needed here
+    // because the update happens on the UI thread and the readers tolerate the tiny window
+    // where the queue uses the previous value.
+    private AppSettings _currentSettings = SettingsStore.Load();
+
     private bool _disposed;
 
     public event EventHandler<TorrentManager>? TorrentAdded;
@@ -119,8 +127,10 @@ public sealed class TorrentService : IAsyncDisposable
     /// Currently: if the download-limit was raised, resume waiting torrents; if lowered,
     /// no-op (we don't preempt running torrents on the fly).
     /// </summary>
-    public Task ApplySettingsAsync(AppSettings _)
+    public Task ApplySettingsAsync(AppSettings settings)
     {
+        // Cache in memory so hot-path callers (CanStartMore) don't re-read from disk.
+        _currentSettings = settings;
         return StartNextIfSlotFreeAsync();
     }
 
@@ -685,13 +695,12 @@ public sealed class TorrentService : IAsyncDisposable
 
     private bool CanStartMore()
     {
-        var settings = SettingsStore.Load();
         var active = 0;
         foreach (var mgr in _engine.Torrents)
         {
             if (WasDownloading(mgr.State)) active++;
         }
-        return active < settings.MaxSimultaneousDownloads;
+        return active < _currentSettings.MaxSimultaneousDownloads;
     }
 
     private static bool WasDownloading(TorrentState state) => state is
