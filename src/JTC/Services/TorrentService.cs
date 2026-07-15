@@ -1,4 +1,5 @@
 using System.Net;
+using JTC.Helpers;
 using MonoTorrent;
 using MonoTorrent.Client;
 
@@ -41,6 +42,13 @@ public sealed class TorrentService : IAsyncDisposable
     // MonoTorrent otherwise throws "A manager for this torrent has already been registered"
     // because its info-hash cleanup lags the RemoveAsync return.
     private readonly SemaphoreSlim _mutation = new(1, 1);
+
+    // Periodic diagnostic timer — writes one metrics line per active torrent to debug.log
+    // every ~10 s. Without this the "download stalls / drops" reports have nothing to
+    // work with: the app-side numbers change second-to-second in the UI and are lost.
+    // 10 s is a compromise: dense enough to see ramp-up curves after Add, sparse enough
+    // that debug.log's 1 MB rotation lasts many hours on a single active torrent.
+    private readonly System.Threading.Timer _diagTimer;
     private bool _disposed;
 
     public event EventHandler<TorrentManager>? TorrentAdded;
@@ -88,6 +96,14 @@ public sealed class TorrentService : IAsyncDisposable
             AutoSaveLoadFastResume = true,       // skip full re-hash on restart
             AutoSaveLoadMagnetLinkMetadata = true, // cache magnet metadata
         }.ToSettings());
+
+        // First tick after 15 s so we skip the noisy startup burst; subsequent ticks
+        // every 10 s. Ticks are read-only property fetches on background thread —
+        // never touches _mutation, never awaits, so it can't deadlock or delay Add/Remove.
+        _diagTimer = new System.Threading.Timer(
+            LogDiagnosticsTick, null,
+            dueTime: TimeSpan.FromSeconds(15),
+            period: TimeSpan.FromSeconds(10));
     }
 
     /// <summary>
@@ -428,6 +444,7 @@ public sealed class TorrentService : IAsyncDisposable
         if (_disposed)
             return;
         _disposed = true;
+        await _diagTimer.DisposeAsync();
         foreach (var mgr in _engine.Torrents)
             mgr.TorrentStateChanged -= OnManagerStateChanged;
         await _engine.StopAllAsync();
@@ -444,13 +461,114 @@ public sealed class TorrentService : IAsyncDisposable
 
     private async void OnManagerStateChanged(object? sender, TorrentStateChangedEventArgs e)
     {
+        // Diagnostic: capture Error-state transitions with the underlying cause so post-mortem
+        // has a concrete exception to look at instead of just "torrent went red". Done outside
+        // the try/catch below so a logging bug can't silently be swallowed.
+        if (e.NewState == TorrentState.Error && sender is TorrentManager errored)
+        {
+            var name = errored.Torrent?.Name ?? "(no metadata)";
+            var ex = errored.Error?.Exception;
+            if (ex is not null)
+                DebugLog.Error($"torrent -> Error '{name}'", ex);
+            else
+                DebugLog.Info($"torrent -> Error '{name}' (no manager.Error captured)");
+        }
+
         try
         {
             // A slot frees when a manager stops downloading (finished → Seeding, or externally paused/stopped/errored).
             if (WasDownloading(e.OldState) && !WasDownloading(e.NewState))
                 await StartNextIfSlotFreeAsync();
         }
-        catch { /* best-effort */ }
+        catch (Exception ex)
+        {
+            // Was silently swallowed before task 4. Log so we can see why StartNextIfSlotFreeAsync failed.
+            DebugLog.Error("OnManagerStateChanged.StartNextIfSlotFreeAsync", ex);
+        }
+    }
+
+    // Timer tick: emit one debug.log line per manager currently doing anything interesting.
+    // Runs on a ThreadPool thread, off the mutation semaphore path. Each property access is
+    // best-effort — MonoTorrent may throw briefly during teardown, so a per-torrent try/catch
+    // logs the failure and moves on rather than killing the whole tick.
+    private void LogDiagnosticsTick(object? _)
+    {
+        if (_disposed) return;
+        try
+        {
+            // Snapshot to avoid enumerating engine.Torrents while add/remove mutates it.
+            var snapshot = _engine.Torrents.ToArray();
+            foreach (var m in snapshot)
+            {
+                try { LogOneTorrentDiagnostics(m); }
+                catch (Exception ex) { DebugLog.Error("diag one-torrent", ex); }
+            }
+        }
+        catch (Exception ex) { DebugLog.Error("diag tick", ex); }
+    }
+
+    private void LogOneTorrentDiagnostics(TorrentManager m)
+    {
+        var state = m.State;
+        // Skip fully-idle torrents (Stopped/Paused) — no useful metrics, only log noise.
+        // Error state is logged separately by OnManagerStateChanged when it flips there,
+        // but we still emit a periodic line so we can see how long it's been stuck.
+        if (state is TorrentState.Stopped or TorrentState.Paused)
+            return;
+
+        var name = ShortName(m.Torrent?.Name);
+        var down = m.Monitor.DownloadRate;
+        var up = m.Monitor.UploadRate;
+        var progress = m.Progress;
+
+        // Peers.Available = known-but-not-currently-connected peers from tracker/DHT/PeX.
+        // OpenConnections = TCP sockets currently established. Both matter: connections
+        // without a peer pool = we can't grow; peer pool without connections = we're not
+        // making outbound attempts (half-open cap? blocked? firewall?).
+        int available = -1, seeds = -1, leechs = -1, open = -1;
+        try { available = m.Peers.Available; } catch { }
+        try { seeds     = m.Peers.Seeds;     } catch { }
+        try { leechs    = m.Peers.Leechs;    } catch { }
+        try { open      = m.OpenConnections; } catch { }
+
+        var dhtState = "?";
+        try { dhtState = _engine.Dht.State.ToString(); } catch { }
+
+        // Trackers are optional (magnet-only pre-metadata has none). Summarise as
+        // "OK/total" counting tiers with at least one working tracker — anything more
+        // detailed would blow up the log for public torrents with 30+ trackers.
+        int trackerTiers = -1, trackerOk = -1;
+        try
+        {
+            var tiers = m.TrackerManager?.Tiers;
+            if (tiers is not null)
+            {
+                trackerTiers = tiers.Count;
+                trackerOk = 0;
+                foreach (var tier in tiers)
+                {
+                    try
+                    {
+                        if (tier.ActiveTracker?.Status == MonoTorrent.Trackers.TrackerState.Ok)
+                            trackerOk++;
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch { }
+
+        DebugLog.Info(
+            $"DIAG '{name}' state={state} prog={progress:F1}% " +
+            $"D={Formatting.RateToHuman(down)} U={Formatting.RateToHuman(up)} " +
+            $"conn={open} peers(avail/seeds/leech)={available}/{seeds}/{leechs} " +
+            $"trackers={trackerOk}/{trackerTiers} dht={dhtState}");
+    }
+
+    private static string ShortName(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return "(no metadata)";
+        return name.Length <= 60 ? name : name.Substring(0, 57) + "…";
     }
 
     private async Task StartNextIfSlotFreeAsync()
