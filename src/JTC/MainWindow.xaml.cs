@@ -1196,8 +1196,13 @@ public sealed partial class MainWindow : Window
             XamlRoot = Content.XamlRoot,
         };
         // Single-column layout fits in the default ContentDialogMaxWidth (~548 dip),
-        // so no MaxWidth override is needed.
+        // so no MaxWidth override is needed. HEIGHT gets more room — the full colour
+        // list (gradient + plashka + 5 status swatches + preset actions) is ~830 dip,
+        // more than the default ContentDialogMaxHeight of 756. Raising the cap lets
+        // the dialog show every option without scrolling on any window taller than
+        // ~950 dip; smaller windows still scroll via the ContentScrollViewer fix.
         ThemeHelper.ApplyToDialog(dialog, ThemeHelper.CurrentTheme);
+        dialog.Resources["ContentDialogMaxHeight"] = 1200.0;
 
         // Save-as-preset: WinUI 3 disallows stacking ContentDialogs (a nested ShowAsync
         // throws COMException "Only one ContentDialog can be open at a time" — inside an
