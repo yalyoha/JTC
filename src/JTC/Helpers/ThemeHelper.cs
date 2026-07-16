@@ -281,6 +281,16 @@ public static class ThemeHelper
     {
         dialog.Background = MakeColoredGradient(top, bottom);
 
+        // Setting dialog.Background propagates through {TemplateBinding Background} to
+        // BOTH the outer BackgroundElement Border AND the inner CommandSpace Grid — so
+        // the button strip's own gradient reappears after every live-preview colour
+        // change even though ApplyToDialog's initial Loaded handler cleared it. Re-kill
+        // CommandSpace.Background here so the continuous top-to-bottom gradient stays
+        // continuous while the user drags a colour picker.
+        var transparentBrush = new SolidColorBrush(Color.FromArgb(0x00, 0, 0, 0));
+        if (FindDescendantByName(dialog, "CommandSpace") is Panel csPanel)
+            csPanel.Background = transparentBrush;
+
         var accentBase   = new SolidColorBrush(top);
         var accentHover  = new SolidColorBrush(MixTowards(top, White, 0.30));
         var accentPress  = new SolidColorBrush(MixTowards(top, Black, 0.30));
