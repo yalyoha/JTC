@@ -233,17 +233,24 @@ public sealed class TorrentService : IAsyncDisposable
 
     public async Task<TorrentManager> AddMagnetAsync(string magnetUri, string downloadDir, bool startImmediately)
     {
+        DebugLog.Info($"AddMagnetAsync ENTER uri='{magnetUri}' start={startImmediately}");
         if (!MagnetLink.TryParse(magnetUri, out var link) || link is null)
             throw new ArgumentException("Invalid magnet link", nameof(magnetUri));
         Directory.CreateDirectory(downloadDir);
 
         await _mutation.WaitAsync();
+        DebugLog.Info("  AddMagnet: semaphore acquired");
+        TorrentManager manager;
         try
         {
             if (IsAlreadyTracked(magnetUri))
+            {
+                DebugLog.Info("  AddMagnet: rejected as duplicate");
                 throw new InvalidOperationException("Этот magnet уже добавлен.");
+            }
 
-            var manager = await AddWithRetryAsync(() => _engine.AddAsync(link, downloadDir, BuildTorrentSettings()));
+            manager = await AddWithRetryAsync(() => _engine.AddAsync(link, downloadDir, BuildTorrentSettings()));
+            DebugLog.Info($"  AddMagnet: engine.AddAsync ok, engine.Torrents.Count={_engine.Torrents.Count}");
             WireStateChange(manager);
             _persistedByManager[manager] = new PersistedTorrent
             {
@@ -253,12 +260,28 @@ public sealed class TorrentService : IAsyncDisposable
                 Paused = !startImmediately,
             };
             TorrentAdded?.Invoke(this, manager);
-            if (startImmediately && CanStartMore())
-                await manager.StartAsync();
             await SaveStateAsync();
-            return manager;
+            DebugLog.Info("  AddMagnet: done (start deferred outside lock)");
         }
-        finally { _mutation.Release(); }
+        catch (Exception ex) { DebugLog.Error("AddMagnetAsync", ex); throw; }
+        finally { _mutation.Release(); DebugLog.Info("  AddMagnet: semaphore released"); }
+
+        // StartAsync is fire-and-forget and lives OUTSIDE the mutation lock. For
+        // magnets, TorrentManager.StartAsync can block for a long time (or forever
+        // on a bad network / unreachable DHT) waiting for the first metadata
+        // exchange with a peer — if we awaited it while holding the mutation
+        // semaphore, every subsequent Add / Remove would hang behind the stuck
+        // magnet. StartAsync errors are logged; state changes reach the UI via
+        // TorrentStateChanged the same way as the .torrent path.
+        if (startImmediately && CanStartMore())
+        {
+            _ = Task.Run(async () =>
+            {
+                try { await manager.StartAsync(); }
+                catch (Exception ex) { DebugLog.Error($"magnet StartAsync '{manager.Torrent?.Name ?? magnetUri}'", ex); }
+            });
+        }
+        return manager;
     }
 
     public async Task PauseAsync(TorrentManager manager)
