@@ -1,11 +1,11 @@
 ; Inno Setup script for Junior Torrent Client (JTC)
 ; Compile with: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\JTC.iss
-; Output: dist\JTC-v0.4.1-setup.exe
+; Output: dist\JTC-v0.4.2-setup.exe
 
 #define MyAppName "Junior Torrent Client"
 #define MyAppShortName "JTC"
 #define MyAppFolderName "JuniorTorrentClient"
-#define MyAppVersion "0.4.1"
+#define MyAppVersion "0.4.2"
 #define MyAppPublisher "yalyoha"
 #define MyAppURL "https://github.com/yalyoha/JTC"
 #define MyAppExeName "JTC.exe"
@@ -124,10 +124,31 @@ begin
     Result := RemoveQuotes(UninstallStr);
 end;
 
-// Called by Inno right before the install phase. If JTC is running (holds the
-// SingleInstance mutex), drop the "@shutdown" marker into its inbox and wait for
-// the mutex to release. On timeout, return a non-empty error string — Inno shows
-// it in a dialog and aborts the install without touching any files.
+// Force-kill by executable name via cmd.exe → taskkill. Used as the fallback path
+// in PrepareToInstall for JTC versions before v0.3.36 (which don't understand the
+// @shutdown marker) and for the pre-rebrand TClient.exe from v0.3.15 and earlier.
+// Torrent state is persisted after every add/remove/pause/resume, so a hard kill
+// loses at most current-second rate stats — same cost as the tray "Выход" path.
+procedure ForceKillByName(const ExeName: String);
+var
+  ResultCode: Integer;
+begin
+  Exec(ExpandConstant('{cmd}'),
+       '/c taskkill /F /IM ' + ExeName + ' /T',
+       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
+
+// Called by Inno right before the install phase. Two-stage shutdown of any running
+// JTC so the {app} directory can be safely wiped and rewritten:
+//
+//   1) Graceful — drop the "@shutdown" marker into the inbox. v0.3.36+ picks this
+//      up via FileSystemWatcher and calls Process.Kill from its own app-side
+//      handler, giving TorrentService's dispose logic a chance to run.
+//   2) Force — after 5 s, unconditionally taskkill /F both JTC.exe and legacy
+//      TClient.exe. Handles pre-v0.3.36 installs that never learned about the
+//      marker (their exe would ignore the file and keep running, and the [Files]
+//      copy would then fail to overwrite the locked JTC.dll — user sees a "new
+//      launcher, old code" hybrid). Also catches any wedged teardown edge case.
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   MarkerDir:  String;
@@ -136,28 +157,42 @@ var
 begin
   Result := '';
   if not CheckForMutexes(JtcMutex) then
+  begin
+    // Mutex not held → JTC not running. Still kill legacy TClient.exe in case
+    // an even older install is around (its mutex name may differ from JtcMutex).
+    ForceKillByName('TClient.exe');
+    Sleep(200);
     Exit;
+  end;
 
   MarkerDir := ExpandConstant('{localappdata}\JTC\inbox');
   if not DirExists(MarkerDir) then
     ForceDirectories(MarkerDir);
   MarkerPath := MarkerDir + '\shutdown_' + IntToStr(GetTickCount) + '.txt';
-  if not SaveStringToFile(MarkerPath, '@shutdown', False) then
-  begin
-    Result := 'Не удалось создать файл-сигнал завершения работы JTC в ' + MarkerDir;
-    Exit;
-  end;
+  SaveStringToFile(MarkerPath, '@shutdown', False);
 
+  // Give the graceful path 5 s — down from the 10 s used in v0.3.36 / v0.4.1 so
+  // we get to the force-kill fallback faster. Modern JTC exits within ~200 ms
+  // of receiving the marker, so 5 s is a comfortable margin.
   Elapsed := 0;
-  while (Elapsed < ShutdownTimeout) and CheckForMutexes(JtcMutex) do
+  while (Elapsed < 5000) and CheckForMutexes(JtcMutex) do
   begin
     Sleep(PollInterval);
     Elapsed := Elapsed + PollInterval;
   end;
 
+  // Fallback: force-kill regardless of whether the mutex is still held. The kill
+  // is a no-op if the process already exited via the marker path. Also targets
+  // legacy TClient.exe in case a pre-rebrand install is what's running.
+  ForceKillByName('JTC.exe');
+  ForceKillByName('TClient.exe');
+  Sleep(500);
+
+  // Something is wedged past both graceful and force paths — very unusual. Ask
+  // the user to intervene rather than proceed and corrupt the install.
   if CheckForMutexes(JtcMutex) then
-    Result := 'JTC не завершил работу за отведённое время. ' +
-              'Закройте его вручную через меню трея (правый клик по иконке → Выход) и запустите установку заново.';
+    Result := 'JTC не удалось завершить. Снимите процесс JTC.exe в Диспетчере задач ' +
+              'и запустите установку заново.';
 end;
 
 // Immediately before the [Files] copy runs, invoke the previous version's uninstaller
