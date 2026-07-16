@@ -27,14 +27,29 @@ public enum PlashkaStyle
 }
 
 /// <summary>
-/// A named pair of gradient colors (top + bottom) that the user can save from the settings
-/// dialog and re-apply later. Stored as hex strings (#AARRGGBB) so JSON is human-readable.
+/// A named colour set (window gradient + plashka + status colours) that the user can save
+/// from the settings dialog and re-apply later. All hex fields are #AARRGGBB.
+///
+/// Legacy pre-v0.5.1 presets only stored TopHex + BottomHex; the newer fields are nullable
+/// so those records still deserialize cleanly, and preset-selection code only applies a
+/// field when it's present (so a built-in gradient-only preset leaves the current plashka
+/// and status colours untouched).
 /// </summary>
 public sealed record ColorPreset
 {
     public string Name { get; init; } = "";
     public string TopHex { get; init; } = "";
     public string BottomHex { get; init; } = "";
+
+    // v0.5.1+ — full-palette presets. Optional so pre-v0.5.1 presets keep working and
+    // built-in presets can specify only the gradient (leaving plashka / status current).
+    public string? PlashkaBgHex        { get; init; }
+    public string? PlashkaFgHex        { get; init; }
+    public string? StatusIdleHex       { get; init; }
+    public string? StatusDownloadingHex{ get; init; }
+    public string? StatusSeedingHex    { get; init; }
+    public string? StatusHashingHex    { get; init; }
+    public string? StatusErrorHex      { get; init; }
 }
 
 /// <summary>

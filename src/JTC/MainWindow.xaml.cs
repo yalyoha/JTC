@@ -1079,7 +1079,6 @@ public sealed partial class MainWindow : Window
         coloredSection.Children.Add(presetBox);
         coloredSection.Children.Add(MakeSwatchRow("Верхний цвет", topSwatch));
         coloredSection.Children.Add(MakeSwatchRow("Нижний цвет",  bottomSwatch));
-        coloredSection.Children.Add(presetActionsRow);
         coloredSection.Children.Add(SectionHeader("Плашки строк"));
         coloredSection.Children.Add(MakeSwatchRow("Плашка (фон)",   plashkaBgSwatch));
         coloredSection.Children.Add(MakeSwatchRow("Плашка (текст)", plashkaFgSwatch));
@@ -1089,6 +1088,18 @@ public sealed partial class MainWindow : Window
         coloredSection.Children.Add(MakeSwatchRow("Раздача",  statusSeedingSwatch));
         coloredSection.Children.Add(MakeSwatchRow("Проверка", statusHashingSwatch));
         coloredSection.Children.Add(MakeSwatchRow("Ошибка",   statusErrorSwatch));
+        // Preset actions live at the very bottom now — they operate on the FULL palette
+        // above (gradient + plashka bg/fg + all 5 status colours), so it reads more
+        // naturally after the user has finished picking every colour.
+        coloredSection.Children.Add(SectionHeader("Пресеты"));
+        coloredSection.Children.Add(new TextBlock
+        {
+            Text = "Сохраняет весь набор цветов выше (градиент, плашки, статусы).",
+            Opacity = 0.65,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+        });
+        coloredSection.Children.Add(presetActionsRow);
 
         // Initial preset selection: try to match current colors to a preset.
         RebuildPresetItems();
@@ -1102,6 +1113,17 @@ public sealed partial class MainWindow : Window
         }
         UpdatePresetActionButtonStates();
 
+        // Preset selection applies every colour the preset defines. Built-in presets
+        // only carry TopHex + BottomHex — the other (nullable) fields stay null so
+        // plashka + status colours don't get clobbered when the user picks a built-in.
+        // User-saved presets (v0.5.1+) carry the full 9-colour palette.
+        void ApplyPresetFieldIfSet(string? hex, System.Action<Color> assignWorking, Border swatch)
+        {
+            var parsed = ThemeHelper.TryParseHex(hex);
+            if (parsed is null) return;
+            assignWorking(parsed.Value);
+            swatch.Background = new SolidColorBrush(parsed.Value);
+        }
         presetBox.SelectionChanged += (_, _) =>
         {
             var p = PresetAt(presetBox.SelectedIndex);
@@ -1115,8 +1137,16 @@ public sealed partial class MainWindow : Window
                     workingBottom = bottom.Value;
                     topSwatch.Background = new SolidColorBrush(workingTop);
                     bottomSwatch.Background = new SolidColorBrush(workingBottom);
-                    ApplyLiveTheme();
                 }
+                // Plashka + status colours — applied only if the preset defines them.
+                ApplyPresetFieldIfSet(p.PlashkaBgHex,        c => workingPlashkaBg        = c, plashkaBgSwatch);
+                ApplyPresetFieldIfSet(p.PlashkaFgHex,        c => workingPlashkaFg        = c, plashkaFgSwatch);
+                ApplyPresetFieldIfSet(p.StatusIdleHex,       c => workingStatusIdle       = c, statusIdleSwatch);
+                ApplyPresetFieldIfSet(p.StatusDownloadingHex,c => workingStatusDownloading= c, statusDownloadingSwatch);
+                ApplyPresetFieldIfSet(p.StatusSeedingHex,    c => workingStatusSeeding    = c, statusSeedingSwatch);
+                ApplyPresetFieldIfSet(p.StatusHashingHex,    c => workingStatusHashing    = c, statusHashingSwatch);
+                ApplyPresetFieldIfSet(p.StatusErrorHex,      c => workingStatusError      = c, statusErrorSwatch);
+                ApplyLiveTheme();
                 // Track the user's edit target: selecting a user preset makes it editable,
                 // selecting a built-in clears the target (built-ins can't be edited).
                 editTarget = IsBuiltInIndex(presetBox.SelectedIndex) ? null : p;
@@ -1257,8 +1287,15 @@ public sealed partial class MainWindow : Window
             workingPresets.Add(new ColorPreset
             {
                 Name = name,
-                TopHex = ThemeHelper.ToHex(workingTop),
-                BottomHex = ThemeHelper.ToHex(workingBottom),
+                TopHex               = ThemeHelper.ToHex(workingTop),
+                BottomHex            = ThemeHelper.ToHex(workingBottom),
+                PlashkaBgHex         = ThemeHelper.ToHex(workingPlashkaBg),
+                PlashkaFgHex         = ThemeHelper.ToHex(workingPlashkaFg),
+                StatusIdleHex        = ThemeHelper.ToHex(workingStatusIdle),
+                StatusDownloadingHex = ThemeHelper.ToHex(workingStatusDownloading),
+                StatusSeedingHex     = ThemeHelper.ToHex(workingStatusSeeding),
+                StatusHashingHex     = ThemeHelper.ToHex(workingStatusHashing),
+                StatusErrorHex       = ThemeHelper.ToHex(workingStatusError),
             });
             RebuildPresetItems(BuiltInColorPresets.All.Count + workingPresets.Count - 1);
             savePresetFlyout.Hide();
@@ -1379,8 +1416,15 @@ public sealed partial class MainWindow : Window
             var updated = new ColorPreset
             {
                 Name = newName,
-                TopHex = ThemeHelper.ToHex(workingTop),
-                BottomHex = ThemeHelper.ToHex(workingBottom),
+                TopHex               = ThemeHelper.ToHex(workingTop),
+                BottomHex            = ThemeHelper.ToHex(workingBottom),
+                PlashkaBgHex         = ThemeHelper.ToHex(workingPlashkaBg),
+                PlashkaFgHex         = ThemeHelper.ToHex(workingPlashkaFg),
+                StatusIdleHex        = ThemeHelper.ToHex(workingStatusIdle),
+                StatusDownloadingHex = ThemeHelper.ToHex(workingStatusDownloading),
+                StatusSeedingHex     = ThemeHelper.ToHex(workingStatusSeeding),
+                StatusHashingHex     = ThemeHelper.ToHex(workingStatusHashing),
+                StatusErrorHex       = ThemeHelper.ToHex(workingStatusError),
             };
             workingPresets[idx] = updated;
             editTarget = updated;
