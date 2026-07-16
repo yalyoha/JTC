@@ -109,6 +109,12 @@
                     <Setter Property="HorizontalAlignment" Value="Stretch" />
                     <Setter Property="Padding" Value="0" />
                     <Setter Property="Margin" Value="0,0,0,6" />
+                    <!-- WinUI 3 ListViewItem carries a 4 px default CornerRadius (from
+                         ControlCornerRadius theme resource) on its own container — that
+                         rounds the corners of any child that fills the container, so our
+                         plashka Border looks rounded even when its own CornerRadius=0.
+                         Force 0 so the Border's own value is the only thing that matters. -->
+                    <Setter Property="CornerRadius" Value="0" />
                 </Style>
             </ListView.ItemContainerStyle>
             <ListView.Resources>

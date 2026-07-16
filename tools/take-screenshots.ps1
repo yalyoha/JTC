@@ -36,60 +36,71 @@ $base = if (Test-Path $settingsPath) {
 # hex values must match src/JTC/Services/AppSettings.cs — if you tweak a preset
 # there, mirror the change here so the screenshot filename stays meaningful.
 $configs = @(
-    @{ file = 'theme-preset-01-blue-lime.png';      note = 'Сине-зелёная (built-in #1 — default)'
+    # ── Odd presets (1,3,5,7,9) + Dark + Light: SQUARE plashkas, SQUARE buttons,
+    #    LEFT-STRIPE status indicator. Even presets (2,4,6,8,10): keep the
+    #    default rounded capsule + circle look. Mix intentionally showcases
+    #    v0.5.7's new "Оформление" controls in the gallery.
+    @{ file = 'theme-preset-01-blue-lime.png';      note = 'Сине-зелёная (built-in #1 — default) · square + stripe'
        fields = @{ Theme='Colored'; ColoredTopHex='#FF324166'; ColoredBottomHex='#FF7AB317'
                    PlashkaBgHex='#FFFFFFFF'; PlashkaFgHex='#FF212121'
                    StatusIdleHex='#FF90A4AE'; StatusDownloadingHex='#FFFF9100'
-                   StatusSeedingHex='#FF00E676'; StatusHashingHex='#FF2979FF'; StatusErrorHex='#FFFF1744' } },
+                   StatusSeedingHex='#FF00E676'; StatusHashingHex='#FF2979FF'; StatusErrorHex='#FFFF1744'
+                   ButtonCornerRadius=0; PlashkaCornerRadius=0; StatusIndicatorStyle='Stripe' } },
     @{ file = 'theme-preset-02-pink-orange.png';    note = 'Розово-оранжевая (built-in #2)'
        fields = @{ Theme='Colored'; ColoredTopHex='#FFE52E71'; ColoredBottomHex='#FFFF8A00'
                    PlashkaBgHex='#FFFFFFFF'; PlashkaFgHex='#FF212121'
                    StatusIdleHex='#FF90A4AE'; StatusDownloadingHex='#FFFF9100'
                    StatusSeedingHex='#FF00E676'; StatusHashingHex='#FF2979FF'; StatusErrorHex='#FFFF1744' } },
-    @{ file = 'theme-preset-03-sunset.png';         note = 'Закат'
+    @{ file = 'theme-preset-03-sunset.png';         note = 'Закат · square + stripe'
        fields = @{ Theme='Colored'; ColoredTopHex='#FFFF6F00'; ColoredBottomHex='#FFB71C1C'
                    PlashkaBgHex='#FF1E1E1E'; PlashkaFgHex='#FFFFEBCD'
                    StatusIdleHex='#FFBCAAA4'; StatusDownloadingHex='#FFFFAB40'
-                   StatusSeedingHex='#FFFFEB3B'; StatusHashingHex='#FFFF80AB'; StatusErrorHex='#FFFF1744' } },
+                   StatusSeedingHex='#FFFFEB3B'; StatusHashingHex='#FFFF80AB'; StatusErrorHex='#FFFF1744'
+                   ButtonCornerRadius=0; PlashkaCornerRadius=0; StatusIndicatorStyle='Stripe' } },
     @{ file = 'theme-preset-04-ocean.png';          note = 'Океан'
        fields = @{ Theme='Colored'; ColoredTopHex='#FF01579B'; ColoredBottomHex='#FF00838F'
                    PlashkaBgHex='#FFFFFFFF'; PlashkaFgHex='#FF212121'
                    StatusIdleHex='#FF90A4AE'; StatusDownloadingHex='#FF0091EA'
                    StatusSeedingHex='#FF00E5FF'; StatusHashingHex='#FF00B8D4'; StatusErrorHex='#FFFF1744' } },
-    @{ file = 'theme-preset-05-purple-dusk.png';    note = 'Фиолетовый мрак'
+    @{ file = 'theme-preset-05-purple-dusk.png';    note = 'Фиолетовый мрак · square + stripe'
        fields = @{ Theme='Colored'; ColoredTopHex='#FF311B92'; ColoredBottomHex='#FFAA00FF'
                    PlashkaBgHex='#FF212121'; PlashkaFgHex='#FFF3E5F5'
                    StatusIdleHex='#FF9575CD'; StatusDownloadingHex='#FFE040FB'
-                   StatusSeedingHex='#FF7C4DFF'; StatusHashingHex='#FF651FFF'; StatusErrorHex='#FFFF3D00' } },
+                   StatusSeedingHex='#FF7C4DFF'; StatusHashingHex='#FF651FFF'; StatusErrorHex='#FFFF3D00'
+                   ButtonCornerRadius=0; PlashkaCornerRadius=0; StatusIndicatorStyle='Stripe' } },
     @{ file = 'theme-preset-06-mint.png';           note = 'Мятная свежесть'
        fields = @{ Theme='Colored'; ColoredTopHex='#FF00897B'; ColoredBottomHex='#FF80DEEA'
                    PlashkaBgHex='#FFFAFAFA'; PlashkaFgHex='#FF1B1B1B'
                    StatusIdleHex='#FFB0BEC5'; StatusDownloadingHex='#FFFF6D00'
                    StatusSeedingHex='#FF64DD17'; StatusHashingHex='#FF00B8D4'; StatusErrorHex='#FFD50000' } },
-    @{ file = 'theme-preset-07-forest.png';         note = 'Лес'
+    @{ file = 'theme-preset-07-forest.png';         note = 'Лес · square + stripe'
        fields = @{ Theme='Colored'; ColoredTopHex='#FF1B5E20'; ColoredBottomHex='#FFC0CA33'
                    PlashkaBgHex='#FFFAFAFA'; PlashkaFgHex='#FF212121'
                    StatusIdleHex='#FF8D6E63'; StatusDownloadingHex='#FFFFC107'
-                   StatusSeedingHex='#FF43A047'; StatusHashingHex='#FF00ACC1'; StatusErrorHex='#FFE53935' } },
+                   StatusSeedingHex='#FF43A047'; StatusHashingHex='#FF00ACC1'; StatusErrorHex='#FFE53935'
+                   ButtonCornerRadius=0; PlashkaCornerRadius=0; StatusIndicatorStyle='Stripe' } },
     @{ file = 'theme-preset-08-cyberpunk.png';      note = 'Киберпанк'
        fields = @{ Theme='Colored'; ColoredTopHex='#FFE91E63'; ColoredBottomHex='#FF00E5FF'
                    PlashkaBgHex='#FF0F0F0F'; PlashkaFgHex='#FFEEFF41'
                    StatusIdleHex='#FF546E7A'; StatusDownloadingHex='#FFFF00E5'
                    StatusSeedingHex='#FF00FF88'; StatusHashingHex='#FF00E5FF'; StatusErrorHex='#FFFF073F' } },
-    @{ file = 'theme-preset-09-coffee.png';         note = 'Кофе'
+    @{ file = 'theme-preset-09-coffee.png';         note = 'Кофе · square + stripe'
        fields = @{ Theme='Colored'; ColoredTopHex='#FF3E2723'; ColoredBottomHex='#FFD7CCC8'
                    PlashkaBgHex='#FFF5EDE0'; PlashkaFgHex='#FF3E2723'
                    StatusIdleHex='#FFA1887F'; StatusDownloadingHex='#FFFFB300'
-                   StatusSeedingHex='#FF8BC34A'; StatusHashingHex='#FF00838F'; StatusErrorHex='#FFBF360C' } },
+                   StatusSeedingHex='#FF8BC34A'; StatusHashingHex='#FF00838F'; StatusErrorHex='#FFBF360C'
+                   ButtonCornerRadius=0; PlashkaCornerRadius=0; StatusIndicatorStyle='Stripe' } },
     @{ file = 'theme-preset-10-aurora.png';         note = 'Северное сияние'
        fields = @{ Theme='Colored'; ColoredTopHex='#FF1A237E'; ColoredBottomHex='#FF00E676'
                    PlashkaBgHex='#FF0D1B2A'; PlashkaFgHex='#FFE8EAF6'
                    StatusIdleHex='#FF7986CB'; StatusDownloadingHex='#FF00B0FF'
                    StatusSeedingHex='#FF69F0AE'; StatusHashingHex='#FF7C4DFF'; StatusErrorHex='#FFFF5252' } },
-    @{ file = 'theme-dark.png';                     note = 'Dark theme'
-       fields = @{ Theme = 'Dark' } },
-    @{ file = 'theme-light.png';                    note = 'Light theme'
-       fields = @{ Theme = 'Light' } }
+    @{ file = 'theme-dark.png';                     note = 'Dark theme · square + stripe'
+       fields = @{ Theme='Dark'
+                   ButtonCornerRadius=0; PlashkaCornerRadius=0; StatusIndicatorStyle='Stripe' } },
+    @{ file = 'theme-light.png';                    note = 'Light theme · square + stripe'
+       fields = @{ Theme='Light'
+                   ButtonCornerRadius=0; PlashkaCornerRadius=0; StatusIndicatorStyle='Stripe' } }
 )
 
 Add-Type -AssemblyName System.Drawing

@@ -57,6 +57,11 @@ public sealed partial class MainWindow : Window
         var initStatus      = ThemeHelper.StatusColorsFrom(initialSettings);
         ThemeHelper.SetStatusColors(initStatus.Idle, initStatus.Downloading, initStatus.Seeding, initStatus.Hashing, initStatus.Error);
         ThemeHelper.SetCornerRadii(initialSettings.ButtonCornerRadius, initialSettings.PlashkaCornerRadius);
+        // Cache the status-indicator style BEFORE LoadStateAsync fires TorrentAdded —
+        // TorrentViewModel's field initializer for _statusAsCircle reads
+        // ThemeHelper.CurrentStatusIndicatorStyle, so without this call the first-run
+        // rows always come up as Circle regardless of what settings.json says.
+        ThemeHelper.SetStatusIndicatorStyle(initialSettings.StatusIndicatorStyle);
         ThemeHelper.Apply(RootGrid, initialTheme, initialTop, initialBottom, initPlBg, initPlFg);
         // Push button rounding to the six toolbar buttons up-front (row rounding is
         // picked up by each TorrentViewModel's PlashkaCornerRadius default reading
