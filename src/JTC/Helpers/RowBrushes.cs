@@ -58,11 +58,13 @@ public static class RowBrushes
 
     public static Palette Current { get; private set; } = ColoredPalette;
 
-    public static void Set(AppTheme theme) =>
+    public static void Set(AppTheme theme, PlashkaStyle coloredStyle = PlashkaStyle.White) =>
         Current = theme switch
         {
             AppTheme.Dark  => DarkPalette,
             AppTheme.Light => LightPalette,
-            _              => ColoredPalette,
+            // Colored theme lets the user pick between white rows (default, matches
+            // pre-v0.4.8 behaviour) and dark rows for a moodier look over the gradient.
+            _              => coloredStyle == PlashkaStyle.Dark ? DarkPalette : ColoredPalette,
         };
 }

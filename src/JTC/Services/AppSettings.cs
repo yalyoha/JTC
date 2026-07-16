@@ -15,6 +15,18 @@ public enum AppTheme
 }
 
 /// <summary>
+/// Row-background ("плашка") style used inside the Colored theme. Dark and Light themes
+/// always use their own palette; this only differentiates whether the gradient window
+/// hosts white rows with dark text OR dark rows with white text.
+/// </summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum PlashkaStyle
+{
+    White,
+    Dark,
+}
+
+/// <summary>
 /// A named pair of gradient colors (top + bottom) that the user can save from the settings
 /// dialog and re-apply later. Stored as hex strings (#AARRGGBB) so JSON is human-readable.
 /// </summary>
@@ -56,6 +68,11 @@ public sealed record AppSettings
     // fresh installs → ThemeHelper falls back to the first built-in preset.
     public string? ColoredTopHex { get; init; }
     public string? ColoredBottomHex { get; init; }
+
+    // For AppTheme.Colored: which row-background palette to use over the gradient.
+    // Default White preserves the look of pre-v0.4.8 Colored installs (white rows on
+    // top of the gradient); users who want dark rows toggle to Dark from settings.
+    public PlashkaStyle ColoredPlashkaStyle { get; init; } = PlashkaStyle.White;
 
     // User-saved color-preset library. Built-in presets live in BuiltInColorPresets and
     // are prepended in the settings dialog — they are not persisted here to avoid drift

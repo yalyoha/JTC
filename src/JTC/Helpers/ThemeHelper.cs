@@ -30,6 +30,9 @@ public static class ThemeHelper
     /// <summary>Bottom gradient stop for the Colored theme.</summary>
     public static Color CurrentBottom { get; private set; } = DefaultBottom;
 
+    /// <summary>Row-plashka style for the Colored theme (white or dark rows).</summary>
+    public static PlashkaStyle CurrentPlashkaStyle { get; private set; } = PlashkaStyle.White;
+
     public static bool IsColored(AppTheme t) => t == AppTheme.Colored;
 
     /// <summary>
@@ -372,18 +375,22 @@ public static class ThemeHelper
 
     /// <summary>
     /// Full theme apply: window background, element theme, row palette, menu-flyout brushes.
-    /// For AppTheme.Colored, the caller may pass explicit top/bottom colors — if omitted,
-    /// the values previously stored via SetColoredColors are used.
+    /// For AppTheme.Colored, the caller may pass explicit top/bottom colors and plashka
+    /// style — if omitted, the previously-cached values are used.
     /// </summary>
-    public static void Apply(FrameworkElement root, AppTheme theme, Color? top = null, Color? bottom = null)
+    public static void Apply(FrameworkElement root, AppTheme theme,
+        Color? top = null, Color? bottom = null, PlashkaStyle? plashka = null)
     {
         if (theme == AppTheme.Colored)
+        {
             SetColoredColors(top ?? CurrentTop, bottom ?? CurrentBottom);
+            CurrentPlashkaStyle = plashka ?? CurrentPlashkaStyle;
+        }
 
         // Palette first — TorrentViewModels created after this point will read the correct
         // brushes on construction. Existing rows are refreshed by the caller (MainWindow
         // calls Refresh + RefreshBrushes after a settings save).
-        RowBrushes.Set(theme);
+        RowBrushes.Set(theme, CurrentPlashkaStyle);
 
         CurrentTheme = theme;
 

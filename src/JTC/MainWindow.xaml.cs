@@ -39,12 +39,13 @@ public sealed partial class MainWindow : Window
 
         // Paint the window background + set element theme from the user's saved choice.
         // For the Colored theme, restore the last-saved gradient endpoints too (fall back
-        // to first built-in preset if hex parsing fails or the fields are null).
+        // to first built-in preset if hex parsing fails or the fields are null), plus the
+        // plashka style (white vs dark rows over the gradient).
         var initialSettings = SettingsStore.Load();
         var initialTheme = initialSettings.Theme;
         var initialTop = ThemeHelper.TryParseHex(initialSettings.ColoredTopHex);
         var initialBottom = ThemeHelper.TryParseHex(initialSettings.ColoredBottomHex);
-        ThemeHelper.Apply(RootGrid, initialTheme, initialTop, initialBottom);
+        ThemeHelper.Apply(RootGrid, initialTheme, initialTop, initialBottom, initialSettings.ColoredPlashkaStyle);
 
         // Merge title bar into the client area so Acrylic reads through it.
         ExtendsContentIntoTitleBar = true;
@@ -575,9 +576,10 @@ public sealed partial class MainWindow : Window
         // Snapshot the live state so we can revert on Cancel — the color-picker flyouts
         // apply live-preview to the window and title bar as the user drags, so we need
         // a way back to "exactly what was on screen before the dialog opened".
-        var snapshotTheme  = ThemeHelper.CurrentTheme;
-        var snapshotTop    = ThemeHelper.CurrentTop;
-        var snapshotBottom = ThemeHelper.CurrentBottom;
+        var snapshotTheme   = ThemeHelper.CurrentTheme;
+        var snapshotTop     = ThemeHelper.CurrentTop;
+        var snapshotBottom  = ThemeHelper.CurrentBottom;
+        var snapshotPlashka = ThemeHelper.CurrentPlashkaStyle;
 
         // Forward-declared so ApplyLiveTheme can close over the dialog reference — the
         // dialog itself is constructed further down (needs all the child controls first).
@@ -593,6 +595,8 @@ public sealed partial class MainWindow : Window
                          ?? ThemeHelper.TryParseHex(BuiltInColorPresets.PinkTopHex)!.Value;
         var workingBottom = ThemeHelper.TryParseHex(current.ColoredBottomHex)
                             ?? ThemeHelper.TryParseHex(BuiltInColorPresets.PinkBottomHex)!.Value;
+        // Plashka style edited in the dialog — starts from settings, applied live.
+        var workingPlashka = current.ColoredPlashkaStyle;
 
         // ---- LEFT column: existing settings ---------------------------------------
         var pathBox = new Microsoft.UI.Xaml.Controls.TextBox
@@ -763,7 +767,7 @@ public sealed partial class MainWindow : Window
         {
             var themeIdx = System.Math.Max(0, themeBox.SelectedIndex);
             var theme = themeItems[themeIdx].Theme;
-            ThemeHelper.Apply(RootGrid, theme, workingTop, workingBottom);
+            ThemeHelper.Apply(RootGrid, theme, workingTop, workingBottom, workingPlashka);
             ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, theme);
             foreach (var vm in ViewModel.Torrents)
             {
@@ -825,7 +829,8 @@ public sealed partial class MainWindow : Window
             return g;
         }
 
-        var savePresetBtn = new Microsoft.UI.Xaml.Controls.Button { Content = "Сохранить пресет…" };
+        var savePresetBtn   = new Microsoft.UI.Xaml.Controls.Button { Content = "Сохранить пресет…" };
+        var editPresetBtn   = new Microsoft.UI.Xaml.Controls.Button { Content = "Изменить пресет…" };
         var deletePresetBtn = new Microsoft.UI.Xaml.Controls.Button { Content = "Удалить пресет" };
         var presetActionsRow = new Microsoft.UI.Xaml.Controls.StackPanel
         {
@@ -833,7 +838,33 @@ public sealed partial class MainWindow : Window
             Spacing = 8,
         };
         presetActionsRow.Children.Add(savePresetBtn);
+        presetActionsRow.Children.Add(editPresetBtn);
         presetActionsRow.Children.Add(deletePresetBtn);
+
+        // Preset chosen most recently in the ComboBox that is USER-owned (not built-in).
+        // Persists across colour-picker changes so a user can select "Закат", tweak the
+        // colours, and still hit "Изменить пресет…" to save the tweaked colours back to
+        // Закат — even though changing the swatches deselected the ComboBox to -1.
+        ColorPreset? editTarget = workingPresets.Find(p =>
+            string.Equals(p.TopHex, ThemeHelper.ToHex(workingTop),    System.StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(p.BottomHex, ThemeHelper.ToHex(workingBottom), System.StringComparison.OrdinalIgnoreCase));
+
+        // Plashka toggle — lets Colored theme users pick between white rows (default)
+        // and dark rows over the gradient. Header + On/Off content flip so the switch
+        // reads as "state: Тёмные / Светлые" instead of the generic Off/On.
+        var plashkaToggle = new Microsoft.UI.Xaml.Controls.ToggleSwitch
+        {
+            Header = "Плашки",
+            IsOn = workingPlashka == PlashkaStyle.Dark,
+            OnContent = "Тёмные",
+            OffContent = "Светлые",
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        plashkaToggle.Toggled += (_, _) =>
+        {
+            workingPlashka = plashkaToggle.IsOn ? PlashkaStyle.Dark : PlashkaStyle.White;
+            ApplyLiveTheme();
+        };
 
         var rightCol = new Microsoft.UI.Xaml.Controls.StackPanel
         {
@@ -844,12 +875,20 @@ public sealed partial class MainWindow : Window
         rightCol.Children.Add(presetBox);
         rightCol.Children.Add(MakeSwatchRow("Верхний цвет", topSwatch));
         rightCol.Children.Add(MakeSwatchRow("Нижний цвет",  bottomSwatch));
+        rightCol.Children.Add(plashkaToggle);
         rightCol.Children.Add(presetActionsRow);
 
         // Initial preset selection: try to match current colors to a preset.
         RebuildPresetItems();
         presetBox.SelectedIndex = FindPresetIndexMatchingColors(workingTop, workingBottom);
-        deletePresetBtn.IsEnabled = presetBox.SelectedIndex >= 0 && !IsBuiltInIndex(presetBox.SelectedIndex);
+
+        void UpdatePresetActionButtonStates()
+        {
+            var isUserPreset = presetBox.SelectedIndex >= 0 && !IsBuiltInIndex(presetBox.SelectedIndex);
+            deletePresetBtn.IsEnabled = isUserPreset;
+            editPresetBtn.IsEnabled   = editTarget is not null;
+        }
+        UpdatePresetActionButtonStates();
 
         presetBox.SelectionChanged += (_, _) =>
         {
@@ -866,8 +905,17 @@ public sealed partial class MainWindow : Window
                     bottomSwatch.Background = new SolidColorBrush(workingBottom);
                     ApplyLiveTheme();
                 }
+                // Track the user's edit target: selecting a user preset makes it editable,
+                // selecting a built-in clears the target (built-ins can't be edited).
+                editTarget = IsBuiltInIndex(presetBox.SelectedIndex) ? null : p;
             }
-            deletePresetBtn.IsEnabled = presetBox.SelectedIndex >= 0 && !IsBuiltInIndex(presetBox.SelectedIndex);
+            else
+            {
+                // SelectedIndex == -1 (colours no longer match any preset) does NOT clear
+                // editTarget — the user might have just tweaked colours of their preset
+                // and still wants to save them back via "Изменить пресет…".
+            }
+            UpdatePresetActionButtonStates();
         };
 
         // Right column is only relevant for Colored — hide entirely for Dark / Light and
@@ -1019,16 +1067,130 @@ public sealed partial class MainWindow : Window
             var i = presetBox.SelectedIndex;
             if (i < 0 || IsBuiltInIndex(i)) return;
             var j = i - BuiltInColorPresets.All.Count;
+            var removed = workingPresets[j];
             workingPresets.RemoveAt(j);
+            // If we were editing this preset, drop the reference — there is no target
+            // to save changes back into anymore.
+            if (ReferenceEquals(editTarget, removed))
+                editTarget = null;
             RebuildPresetItems();
             presetBox.SelectedIndex = FindPresetIndexMatchingColors(workingTop, workingBottom);
+            UpdatePresetActionButtonStates();
+        };
+
+        // --- Edit-preset flyout: mirrors the save-preset flyout but pre-fills the
+        // current preset's name, and on OK REPLACES the preset (name + top/bottom hex)
+        // instead of appending a new entry.
+        var editNameBox = new Microsoft.UI.Xaml.Controls.TextBox
+        {
+            Header = "Название пресета",
+            MinWidth = 240,
+        };
+        var editErrorLine = new TextBlock
+        {
+            Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0x60, 0x60)),
+            Visibility = Visibility.Collapsed,
+            TextWrapping = TextWrapping.Wrap,
+        };
+        var editOkBtn = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = "OK",
+            Style = (Style)Application.Current.Resources["AccentButtonStyle"],
+            MinWidth = 80,
+        };
+        var editCancelBtn = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = "Отмена",
+            MinWidth = 80,
+        };
+        var editButtonRow = new Microsoft.UI.Xaml.Controls.StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        editButtonRow.Children.Add(editCancelBtn);
+        editButtonRow.Children.Add(editOkBtn);
+        var editFlyoutContent = new Microsoft.UI.Xaml.Controls.StackPanel
+        {
+            Spacing = 10,
+            MinWidth = 260,
+        };
+        editFlyoutContent.Children.Add(new TextBlock
+        {
+            Text = "Изменить пресет",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            FontSize = 15,
+        });
+        editFlyoutContent.Children.Add(new TextBlock
+        {
+            Text = "Название и текущие цвета верх/низ будут сохранены в этот пресет.",
+            Opacity = 0.75,
+            TextWrapping = TextWrapping.Wrap,
+        });
+        editFlyoutContent.Children.Add(editNameBox);
+        editFlyoutContent.Children.Add(editErrorLine);
+        editFlyoutContent.Children.Add(editButtonRow);
+
+        var editPresetFlyout = new Microsoft.UI.Xaml.Controls.Flyout
+        {
+            Content = editFlyoutContent,
+            Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Top,
+        };
+        FlyoutBase.SetAttachedFlyout(editPresetBtn, editPresetFlyout);
+
+        editPresetBtn.Click += (_, _) =>
+        {
+            if (editTarget is null) return;
+            editNameBox.Text = editTarget.Name;
+            editErrorLine.Visibility = Visibility.Collapsed;
+            FlyoutBase.ShowAttachedFlyout(editPresetBtn);
+            editNameBox.Focus(FocusState.Programmatic);
+            editNameBox.SelectAll();
+        };
+        editCancelBtn.Click += (_, _) => editPresetFlyout.Hide();
+        editOkBtn.Click += (_, _) =>
+        {
+            if (editTarget is null) return;
+            var newName = editNameBox.Text?.Trim();
+            if (string.IsNullOrEmpty(newName))
+            {
+                editErrorLine.Text = "Введите название пресета.";
+                editErrorLine.Visibility = Visibility.Visible;
+                return;
+            }
+            // Only check duplicates when renaming — keeping the same name is always OK.
+            if (!string.Equals(newName, editTarget.Name, System.StringComparison.OrdinalIgnoreCase))
+            {
+                bool duplicate = BuiltInColorPresets.All.Any(p => string.Equals(p.Name, newName, System.StringComparison.OrdinalIgnoreCase))
+                              || workingPresets.Any(p => !ReferenceEquals(p, editTarget)
+                                                       && string.Equals(p.Name, newName, System.StringComparison.OrdinalIgnoreCase));
+                if (duplicate)
+                {
+                    editErrorLine.Text = $"Пресет с именем «{newName}» уже есть. Выберите другое имя.";
+                    editErrorLine.Visibility = Visibility.Visible;
+                    return;
+                }
+            }
+            var idx = workingPresets.IndexOf(editTarget);
+            if (idx < 0) return; // should never happen: editTarget was validated on set
+            var updated = new ColorPreset
+            {
+                Name = newName,
+                TopHex = ThemeHelper.ToHex(workingTop),
+                BottomHex = ThemeHelper.ToHex(workingBottom),
+            };
+            workingPresets[idx] = updated;
+            editTarget = updated;
+            RebuildPresetItems(BuiltInColorPresets.All.Count + idx);
+            editPresetFlyout.Hide();
         };
 
         var res = await dialog.ShowAsync();
         if (res != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary)
         {
-            // Revert live-preview changes: restore snapshot theme + colors.
-            ThemeHelper.Apply(RootGrid, snapshotTheme, snapshotTop, snapshotBottom);
+            // Revert live-preview changes: restore snapshot theme + colors + plashka.
+            ThemeHelper.Apply(RootGrid, snapshotTheme, snapshotTop, snapshotBottom, snapshotPlashka);
             ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, snapshotTheme);
             foreach (var vm in ViewModel.Torrents)
             {
@@ -1048,16 +1210,17 @@ public sealed partial class MainWindow : Window
             LastDownloadDir = string.IsNullOrEmpty(newDir) ? null : newDir,
             MaxSimultaneousDownloads = newMax,
             Theme = newTheme,
-            ColoredTopHex    = ThemeHelper.ToHex(workingTop),
-            ColoredBottomHex = ThemeHelper.ToHex(workingBottom),
-            CustomPresets    = workingPresets,
+            ColoredTopHex       = ThemeHelper.ToHex(workingTop),
+            ColoredBottomHex    = ThemeHelper.ToHex(workingBottom),
+            ColoredPlashkaStyle = workingPlashka,
+            CustomPresets       = workingPresets,
         };
         SettingsStore.Save(updated);
 
         // Ensure the window matches saved state — live preview already applied it while
         // the dialog was open, but re-apply here so a "Save without visiting any picker"
         // path still commits correctly (theme changed via combobox, colors unchanged).
-        ThemeHelper.Apply(RootGrid, updated.Theme, workingTop, workingBottom);
+        ThemeHelper.Apply(RootGrid, updated.Theme, workingTop, workingBottom, workingPlashka);
         ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, updated.Theme);
         foreach (var vm in ViewModel.Torrents)
         {
