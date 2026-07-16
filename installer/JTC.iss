@@ -83,6 +83,12 @@ const
   ShutdownTimeout = 10000; // ms
   PollInterval    = 200;
 
+// GetTickCount isn't in Inno 6's built-in Pascal namespace, so import directly
+// from Win32. Used only to give the shutdown marker file a unique name in case a
+// previous install left a stale marker behind.
+function GetTickCount: DWord;
+  external 'GetTickCount@kernel32.dll stdcall';
+
 // Called by Inno right before the install phase. If JTC is running (holds the
 // SingleInstance mutex), drop the "@shutdown" marker into its inbox and wait for
 // the mutex to release. On timeout, return a non-empty error string — Inno shows
