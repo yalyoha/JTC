@@ -23,9 +23,16 @@ public static class SingleInstance
     private static FileSystemWatcher? _watcher;
     private static string InboxDir => Path.Combine(AppPaths.Root, "inbox");
 
+    // Sentinel content the installer drops into the inbox before overwriting files,
+    // asking the running instance to exit cleanly. The mutex it holds gets released as
+    // a side-effect of process exit, which is what the installer's PrepareToInstall
+    // hook actually waits on.
+    public const string ShutdownMarker = "@shutdown";
+
     public static event Action<string>? TorrentPathReceived;
     public static event Action<string>? MagnetReceived;
     public static event Action? ShowWindowRequested;
+    public static event Action? ShutdownRequested;
 
     /// <summary>
     /// Attempts to claim the primary-instance mutex. If another instance already holds it,
@@ -90,6 +97,8 @@ public static class SingleInstance
 
                 if (string.IsNullOrEmpty(content))
                     ShowWindowRequested?.Invoke();
+                else if (string.Equals(content, ShutdownMarker, StringComparison.OrdinalIgnoreCase))
+                    ShutdownRequested?.Invoke();
                 else if (content.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
                     MagnetReceived?.Invoke(content);
                 else

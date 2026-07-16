@@ -1,4 +1,6 @@
 using System.Net;
+using System.Reflection;
+using JTC.Helpers;
 using MonoTorrent;
 using MonoTorrent.Client;
 
@@ -21,6 +23,19 @@ public sealed class TorrentService : IAsyncDisposable
     // not conflicting with other common apps.
     private const int PeerListenPort = 51413;
 
+    // Per-torrent connection cap. MonoTorrent's default per-torrent limit is much lower
+    // than the engine-wide MaximumConnections=500 above, so a single hot torrent leaves
+    // most of the global peer budget idle. 200 lets one torrent claim a large share
+    // without saturating Windows' half-open TCP limit (~50) or starving a second torrent
+    // if the user adds one — two active torrents can still fit under the global 500.
+    private const int PerTorrentMaxConnections = 200;
+
+    // Per-torrent upload slots. Raising slots above the MonoTorrent default helps our
+    // typical single-torrent workload get better tit-for-tat reciprocity from peers,
+    // which improves download throughput. 16 is conservative — high enough to matter
+    // on a 200-peer swarm, low enough to leave upload bandwidth for other traffic.
+    private const int PerTorrentUploadSlots = 16;
+
     private readonly ClientEngine _engine;
     private readonly StateStore _store;
     private readonly Dictionary<TorrentManager, PersistedTorrent> _persistedByManager = new();
@@ -28,6 +43,46 @@ public sealed class TorrentService : IAsyncDisposable
     // MonoTorrent otherwise throws "A manager for this torrent has already been registered"
     // because its info-hash cleanup lags the RemoveAsync return.
     private readonly SemaphoreSlim _mutation = new(1, 1);
+
+    // Periodic diagnostic timer — writes one metrics line per active torrent to debug.log
+    // every ~10 s. Without this the "download stalls / drops" reports have nothing to
+    // work with: the app-side numbers change second-to-second in the UI and are lost.
+    // 10 s is a compromise: dense enough to see ramp-up curves after Add, sparse enough
+    // that debug.log's 1 MB rotation lasts many hours on a single active torrent.
+    private readonly System.Threading.Timer _diagTimer;
+
+    // Periodic fast-resume flush. Without this, MonoTorrent's AutoSaveLoadFastResume only
+    // writes fast-resume data on a clean StopAsync — so a hard kill / crash forces a full
+    // re-hash on the next launch (slow start, zero download speed until the hash finishes).
+    // 45 s is between the plan's 30–60 s window: dense enough to keep the potential re-hash
+    // window short, sparse enough not to hammer HDDs / SMR drives with metadata writes.
+    private readonly System.Threading.Timer _fastResumeTimer;
+
+    // The Save method is internal in MonoTorrent 3.0.2 (there's a compiler-generated
+    // <SaveFastResumeAsync>d__229 state machine in MonoTorrent.Client.dll, but no public
+    // TorrentManager.SaveFastResumeAsync member). We reach it via reflection, resolved once
+    // on the first tick and cached. Null after first-tick means the method wasn't found —
+    // we log once and stop trying. Reflection makes us fragile to future MonoTorrent
+    // renames, but the alternative (full re-hash on every crash) is worse.
+    private MethodInfo? _saveFastResumeMethod;
+    private bool _fastResumeReflectionAttempted;
+    private bool _fastResumeUnavailableLogged;
+
+    // Watchdog state per manager: current retry budget + backoff schedule.
+    // Lives keyed by TorrentManager because the policy is torrent-scoped (removing a
+    // torrent should forget its history; a fresh add starts with a clean budget).
+    // Access is only from the state-changed event handler → no lock needed as long as
+    // we never hop threads inside a single OnManagerStateChanged invocation.
+    private readonly Dictionary<TorrentManager, TorrentRestartPolicy> _restartPolicies = new();
+
+    // Cached AppSettings. Prior code called SettingsStore.Load() (synchronous disk read)
+    // from CanStartMore() inside a while-loop on the hot queue path — every state
+    // transition would re-read the same JSON. Now we snapshot at construction and refresh
+    // on ApplySettingsAsync; hot path is a plain memory read. Volatile-not-needed here
+    // because the update happens on the UI thread and the readers tolerate the tiny window
+    // where the queue uses the previous value.
+    private AppSettings _currentSettings = SettingsStore.Load();
+
     private bool _disposed;
 
     public event EventHandler<TorrentManager>? TorrentAdded;
@@ -75,6 +130,21 @@ public sealed class TorrentService : IAsyncDisposable
             AutoSaveLoadFastResume = true,       // skip full re-hash on restart
             AutoSaveLoadMagnetLinkMetadata = true, // cache magnet metadata
         }.ToSettings());
+
+        // First tick after 15 s so we skip the noisy startup burst; subsequent ticks
+        // every 10 s. Ticks are read-only property fetches on background thread —
+        // never touches _mutation, never awaits, so it can't deadlock or delay Add/Remove.
+        _diagTimer = new System.Threading.Timer(
+            LogDiagnosticsTick, null,
+            dueTime: TimeSpan.FromSeconds(15),
+            period: TimeSpan.FromSeconds(10));
+
+        // First tick after 45 s — no point saving fast-resume before we've downloaded
+        // anything worth resuming from. Then every 45 s.
+        _fastResumeTimer = new System.Threading.Timer(
+            FastResumeTick, null,
+            dueTime: TimeSpan.FromSeconds(45),
+            period: TimeSpan.FromSeconds(45));
     }
 
     /// <summary>
@@ -82,8 +152,10 @@ public sealed class TorrentService : IAsyncDisposable
     /// Currently: if the download-limit was raised, resume waiting torrents; if lowered,
     /// no-op (we don't preempt running torrents on the fly).
     /// </summary>
-    public Task ApplySettingsAsync(AppSettings _)
+    public Task ApplySettingsAsync(AppSettings settings)
     {
+        // Cache in memory so hot-path callers (CanStartMore) don't re-read from disk.
+        _currentSettings = settings;
         return StartNextIfSlotFreeAsync();
     }
 
@@ -106,7 +178,7 @@ public sealed class TorrentService : IAsyncDisposable
                 throw new InvalidOperationException("Этот торрент уже добавлен.");
             }
             DebugLog.Info($"  Add: engine.Torrents.Count before = {_engine.Torrents.Count}");
-            var manager = await AddWithRetryAsync(() => _engine.AddAsync(torrentPath, downloadDir));
+            var manager = await AddWithRetryAsync(() => _engine.AddAsync(torrentPath, downloadDir, BuildTorrentSettings()));
             DebugLog.Info($"  Add: engine.AddAsync ok, engine.Torrents.Count after = {_engine.Torrents.Count}");
             WireStateChange(manager);
 
@@ -123,6 +195,12 @@ public sealed class TorrentService : IAsyncDisposable
                 SourceKind = PersistedSourceKind.TorrentFile,
                 DownloadDir = downloadDir,
                 Paused = !startImmediately,
+                // Persist skip selection so a restart of the app doesn't quietly re-enable
+                // download of files the user explicitly excluded. Normalise to a sorted
+                // int[] so the JSON diff is stable and predictable.
+                SkipFileIndices = skipFileIndices is { Count: > 0 }
+                    ? skipFileIndices.OrderBy(i => i).ToArray()
+                    : null,
             };
             TorrentAdded?.Invoke(this, manager);
             if (startImmediately && CanStartMore())
@@ -165,7 +243,7 @@ public sealed class TorrentService : IAsyncDisposable
             if (IsAlreadyTracked(magnetUri))
                 throw new InvalidOperationException("Этот magnet уже добавлен.");
 
-            var manager = await AddWithRetryAsync(() => _engine.AddAsync(link, downloadDir));
+            var manager = await AddWithRetryAsync(() => _engine.AddAsync(link, downloadDir, BuildTorrentSettings()));
             WireStateChange(manager);
             _persistedByManager[manager] = new PersistedTorrent
             {
@@ -285,6 +363,7 @@ public sealed class TorrentService : IAsyncDisposable
             finally
             {
                 _persistedByManager.Remove(manager);
+                _restartPolicies.Remove(manager);
                 TorrentRemoved?.Invoke(this, manager);
                 try { await SaveStateAsync(); }
                 catch (Exception ex) { DebugLog.Error("SaveStateAsync in remove finally", ex); }
@@ -313,7 +392,17 @@ public sealed class TorrentService : IAsyncDisposable
                 {
                     case PersistedSourceKind.TorrentFile:
                         if (File.Exists(item.Source))
-                            await AddTorrentFileAsync(item.Source, item.DownloadDir, startImmediately: !item.Paused);
+                        {
+                            // Rehydrate the file-selection so the piece-picker keeps skipping
+                            // files the user excluded at first add. Magnet path stays without
+                            // skip support: metadata isn't guaranteed at add time, and the
+                            // add API used for magnets doesn't accept the skip set.
+                            IReadOnlySet<int>? skip = null;
+                            if (item.SkipFileIndices is { Length: > 0 })
+                                skip = new HashSet<int>(item.SkipFileIndices);
+                            await AddTorrentFileAsync(item.Source, item.DownloadDir,
+                                startImmediately: !item.Paused, skipFileIndices: skip);
+                        }
                         break;
                     case PersistedSourceKind.Magnet:
                         await AddMagnetAsync(item.Source, item.DownloadDir, startImmediately: !item.Paused);
@@ -415,6 +504,8 @@ public sealed class TorrentService : IAsyncDisposable
         if (_disposed)
             return;
         _disposed = true;
+        await _diagTimer.DisposeAsync();
+        await _fastResumeTimer.DisposeAsync();
         foreach (var mgr in _engine.Torrents)
             mgr.TorrentStateChanged -= OnManagerStateChanged;
         await _engine.StopAllAsync();
@@ -431,13 +522,274 @@ public sealed class TorrentService : IAsyncDisposable
 
     private async void OnManagerStateChanged(object? sender, TorrentStateChangedEventArgs e)
     {
+        var manager = sender as TorrentManager;
+
+        // A successful re-entry into a downloading state means the previous retry cycle
+        // (if any) worked. Reset the policy so the next stall gets a fresh 5-attempt budget.
+        if (manager is not null && !WasDownloading(e.OldState) && WasDownloading(e.NewState))
+        {
+            if (_restartPolicies.TryGetValue(manager, out var priorPolicy))
+                priorPolicy.RecordSuccess();
+        }
+
+        // Diagnostic: capture Error-state transitions with the underlying cause so post-mortem
+        // has a concrete exception to look at instead of just "torrent went red". Done outside
+        // the try/catch below so a logging bug can't silently be swallowed.
+        if (e.NewState == TorrentState.Error && manager is not null)
+        {
+            var name = manager.Torrent?.Name ?? "(no metadata)";
+            var ex = manager.Error?.Exception;
+            if (ex is not null)
+                DebugLog.Error($"torrent -> Error '{name}'", ex);
+            else
+                DebugLog.Info($"torrent -> Error '{name}' (no manager.Error captured)");
+
+            // Fire-and-forget the recovery attempt — we're already inside an async void handler
+            // and the delay in the watchdog is measured in seconds. Errors inside the watchdog
+            // are logged there, not surfaced back up here.
+            _ = TryRestartAfterErrorAsync(manager);
+        }
+
         try
         {
             // A slot frees when a manager stops downloading (finished → Seeding, or externally paused/stopped/errored).
             if (WasDownloading(e.OldState) && !WasDownloading(e.NewState))
                 await StartNextIfSlotFreeAsync();
         }
-        catch { /* best-effort */ }
+        catch (Exception ex)
+        {
+            // Was silently swallowed before task 4. Log so we can see why StartNextIfSlotFreeAsync failed.
+            DebugLog.Error("OnManagerStateChanged.StartNextIfSlotFreeAsync", ex);
+        }
+    }
+
+    // Watchdog: if a manager fell into Error, wait the policy's backoff and try to restart.
+    // Attempts 1–3 do a plain StartAsync (fastest path — often the underlying condition has
+    // resolved by itself). Attempts 4+ throw a HashCheckAsync in first, in case data on disk
+    // no longer matches fast-resume state (e.g. an external tool touched the files during the
+    // outage). Fatal exceptions from manager.Error skip the whole retry cycle.
+    private async Task TryRestartAfterErrorAsync(TorrentManager manager)
+    {
+        try
+        {
+            if (!_restartPolicies.TryGetValue(manager, out var policy))
+            {
+                policy = new TorrentRestartPolicy();
+                _restartPolicies[manager] = policy;
+            }
+
+            var originalException = manager.Error?.Exception;
+            if (TorrentRestartPolicy.IsFatalException(originalException))
+            {
+                policy.MarkFatal();
+                DebugLog.Info($"watchdog '{manager.Torrent?.Name}': fatal error, no retries " +
+                              $"({originalException?.GetType().Name}: {originalException?.Message})");
+                return;
+            }
+
+            if (!policy.TryReserveNextAttempt(out var delay))
+            {
+                DebugLog.Info($"watchdog '{manager.Torrent?.Name}': retry budget exhausted after " +
+                              $"{policy.AttemptsUsed} attempts");
+                return;
+            }
+
+            var attemptNum = policy.AttemptsUsed; // reflects the attempt we just reserved
+            DebugLog.Info($"watchdog '{manager.Torrent?.Name}': scheduling attempt {attemptNum}/{TorrentRestartPolicy.MaxAttempts} " +
+                          $"in {delay.TotalSeconds:F0}s");
+            await Task.Delay(delay);
+
+            // If someone removed the torrent while we slept, bail out silently.
+            if (_disposed || !_engine.Torrents.Any(t => ReferenceEquals(t, manager)))
+                return;
+
+            // Only act if the torrent is still stuck in Error. Any other state means either the
+            // user intervened (Pause/Recheck) or it already recovered on its own.
+            if (manager.State != TorrentState.Error)
+            {
+                DebugLog.Info($"watchdog '{manager.Torrent?.Name}': no longer in Error (now {manager.State}), skipping");
+                return;
+            }
+
+            if (attemptNum >= 4)
+            {
+                DebugLog.Info($"watchdog '{manager.Torrent?.Name}': attempt {attemptNum}, doing HashCheck before start");
+                try { await manager.HashCheckAsync(autoStart: true); }
+                catch (Exception ex) { DebugLog.Error("watchdog HashCheckAsync", ex); }
+            }
+            else
+            {
+                DebugLog.Info($"watchdog '{manager.Torrent?.Name}': attempt {attemptNum}, StartAsync");
+                try { await manager.StartAsync(); }
+                catch (Exception ex) { DebugLog.Error("watchdog StartAsync", ex); }
+            }
+        }
+        catch (Exception ex)
+        {
+            DebugLog.Error("watchdog outer", ex);
+        }
+    }
+
+    // Timer tick: emit one debug.log line per manager currently doing anything interesting.
+    // Runs on a ThreadPool thread, off the mutation semaphore path. Each property access is
+    // best-effort — MonoTorrent may throw briefly during teardown, so a per-torrent try/catch
+    // logs the failure and moves on rather than killing the whole tick.
+    private void LogDiagnosticsTick(object? _)
+    {
+        if (_disposed) return;
+        try
+        {
+            // Snapshot to avoid enumerating engine.Torrents while add/remove mutates it.
+            var snapshot = _engine.Torrents.ToArray();
+            foreach (var m in snapshot)
+            {
+                try { LogOneTorrentDiagnostics(m); }
+                catch (Exception ex) { DebugLog.Error("diag one-torrent", ex); }
+            }
+        }
+        catch (Exception ex) { DebugLog.Error("diag tick", ex); }
+    }
+
+    private void LogOneTorrentDiagnostics(TorrentManager m)
+    {
+        var state = m.State;
+        // Skip fully-idle torrents (Stopped/Paused) — no useful metrics, only log noise.
+        // Error state is logged separately by OnManagerStateChanged when it flips there,
+        // but we still emit a periodic line so we can see how long it's been stuck.
+        if (state is TorrentState.Stopped or TorrentState.Paused)
+            return;
+
+        var name = ShortName(m.Torrent?.Name);
+        var down = m.Monitor.DownloadRate;
+        var up = m.Monitor.UploadRate;
+        var progress = m.Progress;
+
+        // Peers.Available = known-but-not-currently-connected peers from tracker/DHT/PeX.
+        // OpenConnections = TCP sockets currently established. Both matter: connections
+        // without a peer pool = we can't grow; peer pool without connections = we're not
+        // making outbound attempts (half-open cap? blocked? firewall?).
+        int available = -1, seeds = -1, leechs = -1, open = -1;
+        try { available = m.Peers.Available; } catch { }
+        try { seeds     = m.Peers.Seeds;     } catch { }
+        try { leechs    = m.Peers.Leechs;    } catch { }
+        try { open      = m.OpenConnections; } catch { }
+
+        var dhtState = "?";
+        try { dhtState = _engine.Dht.State.ToString(); } catch { }
+
+        // Trackers are optional (magnet-only pre-metadata has none). Summarise as
+        // "OK/total" counting tiers with at least one working tracker — anything more
+        // detailed would blow up the log for public torrents with 30+ trackers.
+        int trackerTiers = -1, trackerOk = -1;
+        try
+        {
+            var tiers = m.TrackerManager?.Tiers;
+            if (tiers is not null)
+            {
+                trackerTiers = tiers.Count;
+                trackerOk = 0;
+                foreach (var tier in tiers)
+                {
+                    try
+                    {
+                        if (tier.ActiveTracker?.Status == MonoTorrent.Trackers.TrackerState.Ok)
+                            trackerOk++;
+                    }
+                    catch { }
+                }
+            }
+        }
+        catch { }
+
+        DebugLog.Info(
+            $"DIAG '{name}' state={state} prog={progress:F1}% " +
+            $"D={Formatting.RateToHuman(down)} U={Formatting.RateToHuman(up)} " +
+            $"conn={open} peers(avail/seeds/leech)={available}/{seeds}/{leechs} " +
+            $"trackers={trackerOk}/{trackerTiers} dht={dhtState}");
+    }
+
+    private static string ShortName(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return "(no metadata)";
+        return name.Length <= 60 ? name : name.Substring(0, 57) + "…";
+    }
+
+    // Timer tick: for each Downloading/Seeding torrent, ask MonoTorrent to flush its
+    // fast-resume snapshot to EngineSettings.FastResumeCacheDirectory. The method is
+    // internal so we invoke by reflection — see field comments on _saveFastResumeMethod.
+    private void FastResumeTick(object? _)
+    {
+        if (_disposed) return;
+        try
+        {
+            var method = ResolveSaveFastResumeMethod();
+            if (method is null) return;
+
+            var snapshot = _engine.Torrents.ToArray();
+            var saved = 0;
+            foreach (var m in snapshot)
+            {
+                // Only bother with torrents that actually have progress worth resuming.
+                // Downloading = mid-flight; Seeding = 100% but the fast-resume still saves
+                // us the recheck on the next start.
+                if (m.State is not TorrentState.Downloading and not TorrentState.Seeding)
+                    continue;
+
+                try
+                {
+                    var result = method.Invoke(m, null);
+                    if (result is Task task)
+                    {
+                        // Don't block the timer thread; if the save is slow (SMR drive
+                        // flush), wait up to 10 s so back-to-back ticks can't overlap.
+                        if (!task.Wait(TimeSpan.FromSeconds(10)))
+                            DebugLog.Info($"fast-resume '{ShortName(m.Torrent?.Name)}': save timed out (>10s)");
+                        else
+                            saved++;
+                    }
+                    else
+                    {
+                        saved++;
+                    }
+                }
+                catch (TargetInvocationException tie)
+                {
+                    DebugLog.Error($"fast-resume '{ShortName(m.Torrent?.Name)}'", tie.InnerException ?? tie);
+                }
+                catch (Exception ex)
+                {
+                    DebugLog.Error($"fast-resume '{ShortName(m.Torrent?.Name)}'", ex);
+                }
+            }
+            if (saved > 0)
+                DebugLog.Info($"fast-resume: saved {saved}/{snapshot.Length} torrents");
+        }
+        catch (Exception ex) { DebugLog.Error("fast-resume tick", ex); }
+    }
+
+    private MethodInfo? ResolveSaveFastResumeMethod()
+    {
+        if (_fastResumeReflectionAttempted) return _saveFastResumeMethod;
+        _fastResumeReflectionAttempted = true;
+
+        // MonoTorrent 3.0.2 keeps SaveFastResumeAsync as internal — GetMethod with
+        // NonPublic flag reaches it. Signature is expected to be () -> Task or
+        // () -> Task<FastResume>; the return-type isn't checked, only param-less.
+        var mi = typeof(TorrentManager).GetMethod(
+            "SaveFastResumeAsync",
+            BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
+            binder: null,
+            types: Type.EmptyTypes,
+            modifiers: null);
+
+        if (mi is null && !_fastResumeUnavailableLogged)
+        {
+            _fastResumeUnavailableLogged = true;
+            DebugLog.Info("fast-resume: TorrentManager.SaveFastResumeAsync() not found via reflection — " +
+                          "MonoTorrent may have renamed it. Falling back to AutoSaveLoadFastResume on Stop only.");
+        }
+        _saveFastResumeMethod = mi;
+        return mi;
     }
 
     private async Task StartNextIfSlotFreeAsync()
@@ -463,13 +815,12 @@ public sealed class TorrentService : IAsyncDisposable
 
     private bool CanStartMore()
     {
-        var settings = SettingsStore.Load();
         var active = 0;
         foreach (var mgr in _engine.Torrents)
         {
             if (WasDownloading(mgr.State)) active++;
         }
-        return active < settings.MaxSimultaneousDownloads;
+        return active < _currentSettings.MaxSimultaneousDownloads;
     }
 
     private static bool WasDownloading(TorrentState state) => state is
@@ -510,4 +861,20 @@ public sealed class TorrentService : IAsyncDisposable
     private static bool IsAlreadyRegistered(Exception ex) =>
         ex.Message.Contains("already been registered", StringComparison.OrdinalIgnoreCase)
         || ex.Message.Contains("already registered", StringComparison.OrdinalIgnoreCase);
+
+    // Per-torrent settings passed to _engine.AddAsync. Without an explicit settings
+    // argument the engine assigns MonoTorrent's default per-torrent connection cap,
+    // which is far below our engine-wide MaximumConnections=500 — so a single hot
+    // torrent used to stall long before it approached the global budget. See the
+    // PerTorrentMaxConnections / PerTorrentUploadSlots constants at the top for why
+    // these numbers were chosen. DHT and PeX are pinned true explicitly so future
+    // MonoTorrent default flips can't silently disable peer discovery on us.
+    private static TorrentSettings BuildTorrentSettings() =>
+        new TorrentSettingsBuilder
+        {
+            MaximumConnections = PerTorrentMaxConnections,
+            UploadSlots = PerTorrentUploadSlots,
+            AllowDht = true,
+            AllowPeerExchange = true,
+        }.ToSettings();
 }
