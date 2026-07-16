@@ -30,8 +30,11 @@ public static class ThemeHelper
     /// <summary>Bottom gradient stop for the Colored theme.</summary>
     public static Color CurrentBottom { get; private set; } = DefaultBottom;
 
-    /// <summary>Row-plashka style for the Colored theme (white or dark rows).</summary>
-    public static PlashkaStyle CurrentPlashkaStyle { get; private set; } = PlashkaStyle.White;
+    /// <summary>Plashka (row) background colour for the Colored theme.</summary>
+    public static Color CurrentPlashkaBg { get; private set; } = MustParseHex(DefaultColors.WhitePlashkaBgHex);
+
+    /// <summary>Plashka (row) text colour for the Colored theme.</summary>
+    public static Color CurrentPlashkaFg { get; private set; } = MustParseHex(DefaultColors.WhitePlashkaFgHex);
 
     public static bool IsColored(AppTheme t) => t == AppTheme.Colored;
 
@@ -70,6 +73,54 @@ public static class ThemeHelper
     {
         CurrentTop = top;
         CurrentBottom = bottom;
+    }
+
+    /// <summary>Update cached Coloured-theme plashka colours (row background + text).</summary>
+    public static void SetColoredPlashka(Color bg, Color fg)
+    {
+        CurrentPlashkaBg = bg;
+        CurrentPlashkaFg = fg;
+    }
+
+    /// <summary>Apply user-picked status colours to RowBrushes' static state.</summary>
+    public static void SetStatusColors(Color idle, Color downloading, Color seeding, Color hashing, Color error)
+    {
+        RowBrushes.SetStatusColors(idle, downloading, seeding, hashing, error);
+    }
+
+    /// <summary>Resolve a hex string to Color, falling back to a hardcoded default.</summary>
+    public static Color HexOrDefault(string? hex, string defaultHex) =>
+        TryParseHex(hex) ?? MustParseHex(defaultHex);
+
+    /// <summary>
+    /// Full status-colour snapshot pulled from an AppSettings — used by MainWindow at
+    /// startup and by the settings dialog's live-preview to apply status colours in
+    /// one call. Each null hex falls back to its DefaultColors constant.
+    /// </summary>
+    public static (Color Idle, Color Downloading, Color Seeding, Color Hashing, Color Error) StatusColorsFrom(AppSettings s) =>
+        (HexOrDefault(s.StatusIdleHex,        DefaultColors.StatusIdleHex),
+         HexOrDefault(s.StatusDownloadingHex, DefaultColors.StatusDownloadingHex),
+         HexOrDefault(s.StatusSeedingHex,     DefaultColors.StatusSeedingHex),
+         HexOrDefault(s.StatusHashingHex,     DefaultColors.StatusHashingHex),
+         HexOrDefault(s.StatusErrorHex,       DefaultColors.StatusErrorHex));
+
+    /// <summary>
+    /// Plashka bg/fg snapshot pulled from AppSettings, with legacy fallback to the
+    /// ColoredPlashkaStyle enum for pre-v0.5 records that never wrote the hex fields.
+    /// </summary>
+    public static (Color Bg, Color Fg) PlashkaColorsFrom(AppSettings s)
+    {
+        // Newer records: explicit hex wins.
+        if (!string.IsNullOrEmpty(s.PlashkaBgHex) && !string.IsNullOrEmpty(s.PlashkaFgHex))
+        {
+            var bg = TryParseHex(s.PlashkaBgHex);
+            var fg = TryParseHex(s.PlashkaFgHex);
+            if (bg is not null && fg is not null) return (bg.Value, fg.Value);
+        }
+        // Legacy fallback: derive from PlashkaStyle enum.
+        return s.ColoredPlashkaStyle == PlashkaStyle.Dark
+            ? (MustParseHex(DefaultColors.DarkPlashkaBgHex),  MustParseHex(DefaultColors.DarkPlashkaFgHex))
+            : (MustParseHex(DefaultColors.WhitePlashkaBgHex), MustParseHex(DefaultColors.WhitePlashkaFgHex));
     }
 
     private static LinearGradientBrush ColoredGradient() =>
@@ -390,22 +441,27 @@ public static class ThemeHelper
 
     /// <summary>
     /// Full theme apply: window background, element theme, row palette, menu-flyout brushes.
-    /// For AppTheme.Colored, the caller may pass explicit top/bottom colors and plashka
-    /// style — if omitted, the previously-cached values are used.
+    /// For AppTheme.Colored the caller may pass explicit gradient colours + plashka bg/fg;
+    /// omitted values fall through to the previously-cached ones so live-preview code paths
+    /// can update just one dimension at a time.
     /// </summary>
     public static void Apply(FrameworkElement root, AppTheme theme,
-        Color? top = null, Color? bottom = null, PlashkaStyle? plashka = null)
+        Color? top = null, Color? bottom = null,
+        Color? plashkaBg = null, Color? plashkaFg = null)
     {
         if (theme == AppTheme.Colored)
         {
             SetColoredColors(top ?? CurrentTop, bottom ?? CurrentBottom);
-            CurrentPlashkaStyle = plashka ?? CurrentPlashkaStyle;
+            SetColoredPlashka(plashkaBg ?? CurrentPlashkaBg, plashkaFg ?? CurrentPlashkaFg);
         }
 
         // Palette first — TorrentViewModels created after this point will read the correct
         // brushes on construction. Existing rows are refreshed by the caller (MainWindow
         // calls Refresh + RefreshBrushes after a settings save).
-        RowBrushes.Set(theme, CurrentPlashkaStyle);
+        if (theme == AppTheme.Colored)
+            RowBrushes.SetColored(CurrentPlashkaBg, CurrentPlashkaFg);
+        else
+            RowBrushes.Set(theme);
 
         CurrentTheme = theme;
 

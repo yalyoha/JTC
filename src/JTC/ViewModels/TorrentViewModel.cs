@@ -119,21 +119,30 @@ public sealed partial class TorrentViewModel : ObservableObject
     {
         var p = RowBrushes.Current;
         var bg = IsSelected ? p.BgSelected : p.Bg;
-        var fill = IsSelected ? p.FillSelected : p.Fill;
-        // Seeding is 100 % — the whole row would be Fill, but the mockup wants a completed
-        // torrent to render as a plain plashka with no progress artifact. Force Fill = Bg so
-        // the row stays uniform regardless of interpolation offset.
-        if (_current == Display.Seeding) fill = bg;
-        RowBackground = BuildRowBrush(bg, fill, Progress);
 
-        StatusBrush = new SolidColorBrush(_current switch
+        // The row's "progress bar" fill (left band of the gradient, growing with
+        // Progress %) is now a 17 %-opacity composite of the row's current status
+        // colour on top of the plashka bg. So a downloading row gets a soft orange
+        // tint under its progress %, a hashing row gets a soft blue tint, etc.
+        // Both the 4 px left-edge stripe (full opacity) and this tint react to the
+        // same status colour — user-picked from settings, RowBrushes.StatusXxx.
+        var statusColor = _current switch
         {
             Display.Downloading => RowBrushes.StatusDownloading,
             Display.Seeding     => RowBrushes.StatusSeeding,
             Display.Hashing     => RowBrushes.StatusHashing,
             Display.Error       => RowBrushes.StatusError,
             _                   => RowBrushes.StatusIdle,
-        });
+        };
+        // Seeding = 100 %. If we tinted the whole row it would look "done but still
+        // active"; the finished-torrent mockup calls for a plain plashka, so force
+        // fill = bg for Seeding.
+        var fill = _current == Display.Seeding
+            ? bg
+            : RowBrushes.CompositeOver(bg, statusColor, 0.17);
+
+        RowBackground = BuildRowBrush(bg, fill, Progress);
+        StatusBrush   = new SolidColorBrush(statusColor);
         RowForeground = new SolidColorBrush(p.Fg);
     }
 

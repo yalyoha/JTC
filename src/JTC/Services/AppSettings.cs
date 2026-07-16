@@ -58,6 +58,28 @@ public static class BuiltInColorPresets
     };
 }
 
+/// <summary>
+/// Baked-in default hex values for the plashka + status colour groups. Kept as public
+/// constants so the settings dialog can offer a "reset to default" gesture and so
+/// SettingsStore.Load can migrate legacy (pre-v0.5) rows that never wrote these fields.
+/// </summary>
+public static class DefaultColors
+{
+    // Plashka bg/fg — defaults for the "White plashka" look. Dark-plashka defaults are
+    // derived at load time (see SettingsStore) when ColoredPlashkaStyle == Dark.
+    public const string WhitePlashkaBgHex = "#FFFFFFFF";
+    public const string WhitePlashkaFgHex = "#FF212121";
+    public const string DarkPlashkaBgHex  = "#FF2A2A2A";
+    public const string DarkPlashkaFgHex  = "#FFFFFFFF";
+
+    // Status stripe hues — Material A400 across the board so they read on any bg.
+    public const string StatusIdleHex        = "#FF90A4AE";
+    public const string StatusDownloadingHex = "#FFFF9100";
+    public const string StatusSeedingHex     = "#FF00E676";
+    public const string StatusHashingHex     = "#FF2979FF";
+    public const string StatusErrorHex       = "#FFFF1744";
+}
+
 public sealed record AppSettings
 {
     public string? LastDownloadDir { get; init; }
@@ -70,9 +92,26 @@ public sealed record AppSettings
     public string? ColoredBottomHex { get; init; }
 
     // For AppTheme.Colored: which row-background palette to use over the gradient.
-    // Default White preserves the look of pre-v0.4.8 Colored installs (white rows on
-    // top of the gradient); users who want dark rows toggle to Dark from settings.
+    // Legacy hint from v0.4.8; still used by SettingsStore.Load to derive PlashkaBgHex /
+    // PlashkaFgHex when those newer fields are absent (pre-v0.5 settings.json).
     public PlashkaStyle ColoredPlashkaStyle { get; init; } = PlashkaStyle.White;
+
+    // For AppTheme.Colored: plashka (row) background + foreground text colours. v0.5+
+    // makes these user-picked (see DefaultColors for the two ship-defaults). Null on
+    // pre-v0.5 records → SettingsStore.Load fills them in from ColoredPlashkaStyle.
+    public string? PlashkaBgHex { get; init; }
+    public string? PlashkaFgHex { get; init; }
+
+    // Status-stripe colours. Applied globally regardless of theme — a torrent's state
+    // is orthogonal to the window backdrop. Null on pre-v0.5 records → defaults kick
+    // in at load time. The row's "progress bar" gradient fill is a 17%-opacity
+    // composite of the row's current status colour over the plashka bg, so changing
+    // e.g. StatusDownloading tints every downloading row's fill accordingly.
+    public string? StatusIdleHex        { get; init; }
+    public string? StatusDownloadingHex { get; init; }
+    public string? StatusSeedingHex     { get; init; }
+    public string? StatusHashingHex     { get; init; }
+    public string? StatusErrorHex       { get; init; }
 
     // User-saved color-preset library. Built-in presets live in BuiltInColorPresets and
     // are prepended in the settings dialog — they are not persisted here to avoid drift

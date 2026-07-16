@@ -46,14 +46,17 @@ public sealed partial class MainWindow : Window
         ViewModel = new MainViewModel(service, DispatcherQueue);
 
         // Paint the window background + set element theme from the user's saved choice.
-        // For the Colored theme, restore the last-saved gradient endpoints too (fall back
-        // to first built-in preset if hex parsing fails or the fields are null), plus the
-        // plashka style (white vs dark rows over the gradient).
+        // For the Colored theme, restore all user-picked colours: gradient top/bottom,
+        // plashka bg/fg, and every status colour (which affects both the 4 px stripe
+        // and the 17 %-opacity row-fill tint).
         var initialSettings = SettingsStore.Load();
-        var initialTheme = initialSettings.Theme;
-        var initialTop = ThemeHelper.TryParseHex(initialSettings.ColoredTopHex);
-        var initialBottom = ThemeHelper.TryParseHex(initialSettings.ColoredBottomHex);
-        ThemeHelper.Apply(RootGrid, initialTheme, initialTop, initialBottom, initialSettings.ColoredPlashkaStyle);
+        var initialTheme    = initialSettings.Theme;
+        var initialTop      = ThemeHelper.TryParseHex(initialSettings.ColoredTopHex);
+        var initialBottom   = ThemeHelper.TryParseHex(initialSettings.ColoredBottomHex);
+        var (initPlBg, initPlFg) = ThemeHelper.PlashkaColorsFrom(initialSettings);
+        var initStatus      = ThemeHelper.StatusColorsFrom(initialSettings);
+        ThemeHelper.SetStatusColors(initStatus.Idle, initStatus.Downloading, initStatus.Seeding, initStatus.Hashing, initStatus.Error);
+        ThemeHelper.Apply(RootGrid, initialTheme, initialTop, initialBottom, initPlBg, initPlFg);
 
         // Merge title bar into the client area so Acrylic reads through it.
         ExtendsContentIntoTitleBar = true;
@@ -734,10 +737,16 @@ public sealed partial class MainWindow : Window
         // Snapshot the live state so we can revert on Cancel — the color-picker flyouts
         // apply live-preview to the window and title bar as the user drags, so we need
         // a way back to "exactly what was on screen before the dialog opened".
-        var snapshotTheme   = ThemeHelper.CurrentTheme;
-        var snapshotTop     = ThemeHelper.CurrentTop;
-        var snapshotBottom  = ThemeHelper.CurrentBottom;
-        var snapshotPlashka = ThemeHelper.CurrentPlashkaStyle;
+        var snapshotTheme       = ThemeHelper.CurrentTheme;
+        var snapshotTop         = ThemeHelper.CurrentTop;
+        var snapshotBottom      = ThemeHelper.CurrentBottom;
+        var snapshotPlashkaBg   = ThemeHelper.CurrentPlashkaBg;
+        var snapshotPlashkaFg   = ThemeHelper.CurrentPlashkaFg;
+        var snapshotStatusIdle        = RowBrushes.StatusIdle;
+        var snapshotStatusDownloading = RowBrushes.StatusDownloading;
+        var snapshotStatusSeeding     = RowBrushes.StatusSeeding;
+        var snapshotStatusHashing     = RowBrushes.StatusHashing;
+        var snapshotStatusError       = RowBrushes.StatusError;
 
         // Forward-declared so ApplyLiveTheme can close over the dialog reference — the
         // dialog itself is constructed further down (needs all the child controls first).
@@ -753,8 +762,11 @@ public sealed partial class MainWindow : Window
                          ?? ThemeHelper.TryParseHex(BuiltInColorPresets.PinkTopHex)!.Value;
         var workingBottom = ThemeHelper.TryParseHex(current.ColoredBottomHex)
                             ?? ThemeHelper.TryParseHex(BuiltInColorPresets.PinkBottomHex)!.Value;
-        // Plashka style edited in the dialog — starts from settings, applied live.
-        var workingPlashka = current.ColoredPlashkaStyle;
+        // Plashka bg/fg and status colours — start from settings (with legacy fallback via
+        // ThemeHelper.PlashkaColorsFrom / StatusColorsFrom), applied live as user tweaks.
+        var (workingPlashkaBg, workingPlashkaFg) = ThemeHelper.PlashkaColorsFrom(current);
+        var (workingStatusIdle, workingStatusDownloading, workingStatusSeeding,
+             workingStatusHashing, workingStatusError) = ThemeHelper.StatusColorsFrom(current);
 
         // ---- LEFT column: existing settings ---------------------------------------
         var pathBox = new Microsoft.UI.Xaml.Controls.TextBox
@@ -814,13 +826,10 @@ public sealed partial class MainWindow : Window
         themeBox.SelectedIndex = System.Array.FindIndex(themeItems, t => t.Theme == current.Theme);
         if (themeBox.SelectedIndex < 0) themeBox.SelectedIndex = 0;
 
-        // Path row is promoted to the full-width top of the dialog (see outerPanel below);
-        // the left column keeps just the two narrow controls under it. Compact MinWidth
-        // so the two-column strip still fits without horizontal scroll when the parent
-        // window is dragged narrow.
-        var leftCol = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 16, MinWidth = 200 };
-        leftCol.Children.Add(maxBox);
-        leftCol.Children.Add(themeBox);
+        // All non-path controls live in one vertical stack under the full-width path row.
+        // v0.5 collapsed the earlier two-column layout — with plashka bg/fg + five status
+        // colour swatches added, everything reads more clearly stacked top-to-bottom, and
+        // ContentScrollViewer (see ThemeHelper.ApplyToDialog) handles overflow.
 
         // ---- RIGHT column: color pickers + presets (only when Colored) ------------
         // Working copy of the preset list so Save-as-preset / Delete stay local until
@@ -927,7 +936,10 @@ public sealed partial class MainWindow : Window
         {
             var themeIdx = System.Math.Max(0, themeBox.SelectedIndex);
             var theme = themeItems[themeIdx].Theme;
-            ThemeHelper.Apply(RootGrid, theme, workingTop, workingBottom, workingPlashka);
+            // Push status colours first so row VMs pick them up in the following Refresh loop.
+            ThemeHelper.SetStatusColors(workingStatusIdle, workingStatusDownloading,
+                workingStatusSeeding, workingStatusHashing, workingStatusError);
+            ThemeHelper.Apply(RootGrid, theme, workingTop, workingBottom, workingPlashkaBg, workingPlashkaFg);
             ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, theme);
             foreach (var vm in ViewModel.Torrents)
             {
@@ -1009,34 +1021,74 @@ public sealed partial class MainWindow : Window
             string.Equals(p.TopHex, ThemeHelper.ToHex(workingTop),    System.StringComparison.OrdinalIgnoreCase) &&
             string.Equals(p.BottomHex, ThemeHelper.ToHex(workingBottom), System.StringComparison.OrdinalIgnoreCase));
 
-        // Plashka toggle — lets Colored theme users pick between white rows (default)
-        // and dark rows over the gradient. Header + On/Off content flip so the switch
-        // reads as "state: Тёмные / Светлые" instead of the generic Off/On.
-        var plashkaToggle = new Microsoft.UI.Xaml.Controls.ToggleSwitch
+        // Plashka bg + fg swatches — replaces the light/dark toggle from v0.4.8 with
+        // full colour control. Same swatch mechanic as the gradient top/bottom above.
+        var plashkaBgSwatch = MakeSwatchBorder(workingPlashkaBg);
+        var plashkaFgSwatch = MakeSwatchBorder(workingPlashkaFg);
+        FlyoutBase.SetAttachedFlyout(plashkaBgSwatch, MakeColorFlyout(workingPlashkaBg, c =>
         {
-            Header = "Плашки",
-            IsOn = workingPlashka == PlashkaStyle.Dark,
-            OnContent = "Тёмные",
-            OffContent = "Светлые",
-            HorizontalAlignment = HorizontalAlignment.Left,
-        };
-        plashkaToggle.Toggled += (_, _) =>
-        {
-            workingPlashka = plashkaToggle.IsOn ? PlashkaStyle.Dark : PlashkaStyle.White;
+            workingPlashkaBg = c;
+            plashkaBgSwatch.Background = new SolidColorBrush(c);
             ApplyLiveTheme();
-        };
-
-        var rightCol = new Microsoft.UI.Xaml.Controls.StackPanel
+        }));
+        plashkaBgSwatch.Tapped += (_, _) => FlyoutBase.ShowAttachedFlyout(plashkaBgSwatch);
+        FlyoutBase.SetAttachedFlyout(plashkaFgSwatch, MakeColorFlyout(workingPlashkaFg, c =>
         {
-            Spacing = 12,
-            MinWidth = 200,
-            Margin = new Thickness(24, 0, 0, 0),
+            workingPlashkaFg = c;
+            plashkaFgSwatch.Background = new SolidColorBrush(c);
+            ApplyLiveTheme();
+        }));
+        plashkaFgSwatch.Tapped += (_, _) => FlyoutBase.ShowAttachedFlyout(plashkaFgSwatch);
+
+        // Status colour swatches — five state colours (idle / downloading / seeding /
+        // hashing / error). Each drives BOTH the 4 px left-edge stripe AND the 17 %
+        // opacity progress-fill tint on any row of that state.
+        var statusIdleSwatch        = MakeSwatchBorder(workingStatusIdle);
+        var statusDownloadingSwatch = MakeSwatchBorder(workingStatusDownloading);
+        var statusSeedingSwatch     = MakeSwatchBorder(workingStatusSeeding);
+        var statusHashingSwatch     = MakeSwatchBorder(workingStatusHashing);
+        var statusErrorSwatch       = MakeSwatchBorder(workingStatusError);
+        void WireStatusSwatch(Border swatch, Action<Color> assign)
+        {
+            var initial = ((SolidColorBrush)swatch.Background).Color;
+            FlyoutBase.SetAttachedFlyout(swatch, MakeColorFlyout(initial, c =>
+            {
+                assign(c);
+                swatch.Background = new SolidColorBrush(c);
+                ApplyLiveTheme();
+            }));
+            swatch.Tapped += (_, _) => FlyoutBase.ShowAttachedFlyout(swatch);
+        }
+        WireStatusSwatch(statusIdleSwatch,        c => workingStatusIdle = c);
+        WireStatusSwatch(statusDownloadingSwatch, c => workingStatusDownloading = c);
+        WireStatusSwatch(statusSeedingSwatch,     c => workingStatusSeeding = c);
+        WireStatusSwatch(statusHashingSwatch,     c => workingStatusHashing = c);
+        WireStatusSwatch(statusErrorSwatch,       c => workingStatusError = c);
+
+        // The full "Colored theme" section, shown/hidden as one block based on themeBox.
+        // Small section headers keep the growing list of colour controls scannable.
+        TextBlock SectionHeader(string text) => new TextBlock
+        {
+            Text = text,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Opacity = 0.85,
+            Margin = new Thickness(0, 8, 0, 0),
         };
-        rightCol.Children.Add(presetBox);
-        rightCol.Children.Add(MakeSwatchRow("Верхний цвет", topSwatch));
-        rightCol.Children.Add(MakeSwatchRow("Нижний цвет",  bottomSwatch));
-        rightCol.Children.Add(plashkaToggle);
-        rightCol.Children.Add(presetActionsRow);
+        var coloredSection = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 10 };
+        coloredSection.Children.Add(SectionHeader("Фон окна (градиент)"));
+        coloredSection.Children.Add(presetBox);
+        coloredSection.Children.Add(MakeSwatchRow("Верхний цвет", topSwatch));
+        coloredSection.Children.Add(MakeSwatchRow("Нижний цвет",  bottomSwatch));
+        coloredSection.Children.Add(presetActionsRow);
+        coloredSection.Children.Add(SectionHeader("Плашки строк"));
+        coloredSection.Children.Add(MakeSwatchRow("Плашка (фон)",   plashkaBgSwatch));
+        coloredSection.Children.Add(MakeSwatchRow("Плашка (текст)", plashkaFgSwatch));
+        coloredSection.Children.Add(SectionHeader("Цвета статусов"));
+        coloredSection.Children.Add(MakeSwatchRow("Ожидание", statusIdleSwatch));
+        coloredSection.Children.Add(MakeSwatchRow("Загрузка", statusDownloadingSwatch));
+        coloredSection.Children.Add(MakeSwatchRow("Раздача",  statusSeedingSwatch));
+        coloredSection.Children.Add(MakeSwatchRow("Проверка", statusHashingSwatch));
+        coloredSection.Children.Add(MakeSwatchRow("Ошибка",   statusErrorSwatch));
 
         // Initial preset selection: try to match current colors to a preset.
         RebuildPresetItems();
@@ -1078,38 +1130,31 @@ public sealed partial class MainWindow : Window
             UpdatePresetActionButtonStates();
         };
 
-        // Right column is only relevant for Colored — hide entirely for Dark / Light and
-        // toggle live-preview to the new theme every time the picker changes.
-        void UpdateRightColumnVisibility()
+        // Colored section is only relevant for Colored — hide as one block for Dark / Light
+        // themes, no colour pickers apply there.
+        void UpdateColoredSectionVisibility()
         {
             var themeIdx = System.Math.Max(0, themeBox.SelectedIndex);
-            rightCol.Visibility = themeItems[themeIdx].Theme == AppTheme.Colored
+            coloredSection.Visibility = themeItems[themeIdx].Theme == AppTheme.Colored
                 ? Visibility.Visible
                 : Visibility.Collapsed;
         }
-        UpdateRightColumnVisibility();
+        UpdateColoredSectionVisibility();
         themeBox.SelectionChanged += (_, _) =>
         {
-            UpdateRightColumnVisibility();
+            UpdateColoredSectionVisibility();
             ApplyLiveTheme();
         };
 
-        // Bottom-half two-column grid: [maxBox+themeBox] | [presets + swatches].
-        // Auto column widths so each column takes exactly as much space as it needs; the
-        // outer StackPanel then centres the whole strip under the full-width path row.
-        var bottomGrid = new Microsoft.UI.Xaml.Controls.Grid();
-        bottomGrid.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = GridLength.Auto });
-        bottomGrid.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = GridLength.Auto });
-        Microsoft.UI.Xaml.Controls.Grid.SetColumn(leftCol, 0);
-        Microsoft.UI.Xaml.Controls.Grid.SetColumn(rightCol, 1);
-        bottomGrid.Children.Add(leftCol);
-        bottomGrid.Children.Add(rightCol);
-
-        // Outer StackPanel: path row on top (full width thanks to StackPanel's default
-        // horizontal-stretch), everything else stacked below in the two-column bottomGrid.
-        var outerPanel = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 16 };
+        // Single-column vertical layout: path row on top (full width), then all the
+        // stacked controls (max downloads, theme, and — when Colored — the whole colour
+        // section). The dialog's built-in ContentScrollViewer (see ThemeHelper) provides
+        // vertical scrolling if the list overflows a small main window.
+        var outerPanel = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 16, MinWidth = 320 };
         outerPanel.Children.Add(pathRow);
-        outerPanel.Children.Add(bottomGrid);
+        outerPanel.Children.Add(maxBox);
+        outerPanel.Children.Add(themeBox);
+        outerPanel.Children.Add(coloredSection);
 
         dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
         {
@@ -1120,11 +1165,8 @@ public sealed partial class MainWindow : Window
             DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Primary,
             XamlRoot = Content.XamlRoot,
         };
-        // ContentDialog's default MaxWidth (theme resource, ~548 dip) is too narrow for the
-        // two-column layout — the right column with presets/swatches gets clipped. Push it up
-        // to 900 dip so both columns fit comfortably; the dialog auto-shrinks if the content
-        // is smaller (Dark/Light theme collapses the right column).
-        dialog.Resources["ContentDialogMaxWidth"] = 900.0;
+        // Single-column layout fits in the default ContentDialogMaxWidth (~548 dip),
+        // so no MaxWidth override is needed.
         ThemeHelper.ApplyToDialog(dialog, ThemeHelper.CurrentTheme);
 
         // Save-as-preset: WinUI 3 disallows stacking ContentDialogs (a nested ShowAsync
@@ -1349,8 +1391,10 @@ public sealed partial class MainWindow : Window
         var res = await dialog.ShowAsync();
         if (res != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary)
         {
-            // Revert live-preview changes: restore snapshot theme + colors + plashka.
-            ThemeHelper.Apply(RootGrid, snapshotTheme, snapshotTop, snapshotBottom, snapshotPlashka);
+            // Revert live-preview changes: restore snapshot theme + colours + plashka + statuses.
+            ThemeHelper.SetStatusColors(snapshotStatusIdle, snapshotStatusDownloading,
+                snapshotStatusSeeding, snapshotStatusHashing, snapshotStatusError);
+            ThemeHelper.Apply(RootGrid, snapshotTheme, snapshotTop, snapshotBottom, snapshotPlashkaBg, snapshotPlashkaFg);
             ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, snapshotTheme);
             foreach (var vm in ViewModel.Torrents)
             {
@@ -1370,17 +1414,25 @@ public sealed partial class MainWindow : Window
             LastDownloadDir = string.IsNullOrEmpty(newDir) ? null : newDir,
             MaxSimultaneousDownloads = newMax,
             Theme = newTheme,
-            ColoredTopHex       = ThemeHelper.ToHex(workingTop),
-            ColoredBottomHex    = ThemeHelper.ToHex(workingBottom),
-            ColoredPlashkaStyle = workingPlashka,
-            CustomPresets       = workingPresets,
+            ColoredTopHex        = ThemeHelper.ToHex(workingTop),
+            ColoredBottomHex     = ThemeHelper.ToHex(workingBottom),
+            PlashkaBgHex         = ThemeHelper.ToHex(workingPlashkaBg),
+            PlashkaFgHex         = ThemeHelper.ToHex(workingPlashkaFg),
+            StatusIdleHex        = ThemeHelper.ToHex(workingStatusIdle),
+            StatusDownloadingHex = ThemeHelper.ToHex(workingStatusDownloading),
+            StatusSeedingHex     = ThemeHelper.ToHex(workingStatusSeeding),
+            StatusHashingHex     = ThemeHelper.ToHex(workingStatusHashing),
+            StatusErrorHex       = ThemeHelper.ToHex(workingStatusError),
+            CustomPresets        = workingPresets,
         };
         SettingsStore.Save(updated);
 
         // Ensure the window matches saved state — live preview already applied it while
         // the dialog was open, but re-apply here so a "Save without visiting any picker"
         // path still commits correctly (theme changed via combobox, colors unchanged).
-        ThemeHelper.Apply(RootGrid, updated.Theme, workingTop, workingBottom, workingPlashka);
+        ThemeHelper.SetStatusColors(workingStatusIdle, workingStatusDownloading,
+            workingStatusSeeding, workingStatusHashing, workingStatusError);
+        ThemeHelper.Apply(RootGrid, updated.Theme, workingTop, workingBottom, workingPlashkaBg, workingPlashkaFg);
         ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, updated.Theme);
         foreach (var vm in ViewModel.Torrents)
         {
