@@ -27,19 +27,19 @@ $base = if (Test-Path $settingsPath) {
 }
 
 $configs = @(
-    @{ file = 'settings-colored-pink-orange.png'; note = 'Settings dialog on Colored (pink -> orange)'
+    @{ file = 'settings-colored-blue-lime.png'; note = 'Settings dialog on Colored (blue -> lime, default)'
        fields = @{
            Theme = 'Colored'
-           ColoredTopHex = '#FFE52E71'; ColoredBottomHex = '#FFFF8A00'
+           ColoredTopHex = '#FF324166'; ColoredBottomHex = '#FF7AB317'
            PlashkaBgHex = '#FFFFFFFF'; PlashkaFgHex = '#FF212121'
            StatusIdleHex = '#FF90A4AE'; StatusDownloadingHex = '#FFFF9100'
            StatusSeedingHex = '#FF00E676'; StatusHashingHex = '#FF2979FF'
            StatusErrorHex = '#FFFF1744'
        } },
-    @{ file = 'settings-colored-blue-lime.png'; note = 'Settings dialog on Colored (blue -> lime)'
+    @{ file = 'settings-colored-pink-orange.png'; note = 'Settings dialog on Colored (pink -> orange)'
        fields = @{
            Theme = 'Colored'
-           ColoredTopHex = '#FF324166'; ColoredBottomHex = '#FF7AB317'
+           ColoredTopHex = '#FFE52E71'; ColoredBottomHex = '#FFFF8A00'
            PlashkaBgHex = '#FFFFFFFF'; PlashkaFgHex = '#FF212121'
            StatusIdleHex = '#FF90A4AE'; StatusDownloadingHex = '#FFFF9100'
            StatusSeedingHex = '#FF00E676'; StatusHashingHex = '#FF2979FF'

@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="screenshots/theme-preset-01-pink-orange.png" width="880" alt="Junior Torrent Client — окно приложения" />
+  <img src="screenshots/theme-preset-01-blue-lime.png" width="880" alt="Junior Torrent Client — окно приложения" />
 </p>
 
 ## Что умеет
@@ -36,12 +36,12 @@
 
 <table>
 <tr>
-<td width="50%"><img src="screenshots/theme-preset-01-pink-orange.png" alt="Розово-оранжевая" /></td>
-<td width="50%"><img src="screenshots/theme-preset-02-blue-lime.png" alt="Сине-зелёная" /></td>
+<td width="50%"><img src="screenshots/theme-preset-01-blue-lime.png" alt="Сине-зелёная" /></td>
+<td width="50%"><img src="screenshots/theme-preset-02-pink-orange.png" alt="Розово-оранжевая" /></td>
 </tr>
 <tr>
-<td align="center"><b>1. Розово-оранжевая</b></td>
-<td align="center"><b>2. Сине-зелёная</b></td>
+<td align="center"><b>1. Сине-зелёная</b> — тема по умолчанию</td>
+<td align="center"><b>2. Розово-оранжевая</b></td>
 </tr>
 <tr>
 <td width="50%"><img src="screenshots/theme-preset-03-sunset.png" alt="Закат" /></td>

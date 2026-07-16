@@ -136,10 +136,14 @@ public sealed partial class TorrentViewModel : ObservableObject
         };
         // Seeding = 100 %. If we tinted the whole row it would look "done but still
         // active"; the finished-torrent mockup calls for a plain plashka, so force
-        // fill = bg for Seeding.
+        // fill = bg for Seeding. Otherwise 25 % of the status colour composited over
+        // the plashka bg — bumped from 17 % in v0.5.5 because on user-picked pastel
+        // status colours over a matching-tone plashka the fill was nearly indistinguishable
+        // from the background after switching between certain theme presets, and users
+        // read that as "progress bar disappeared".
         var fill = _current == Display.Seeding
             ? bg
-            : RowBrushes.CompositeOver(bg, statusColor, 0.17);
+            : RowBrushes.CompositeOver(bg, statusColor, 0.25);
 
         RowBackground = BuildRowBrush(bg, fill, Progress);
         StatusBrush   = new SolidColorBrush(statusColor);

@@ -13,10 +13,12 @@ public static class ThemeHelper
     private static readonly Color DarkSolid  = Color.FromArgb(0xFF, 0x21, 0x21, 0x21);
     private static readonly Color LightSolid = Color.FromArgb(0xFF, 0xF2, 0xF2, 0xF2);
 
-    // Default Colored-theme gradient: the first built-in preset (pink → orange). Used when
-    // AppSettings.ColoredTopHex / ColoredBottomHex are null (fresh install) or unparseable.
-    private static readonly Color DefaultTop    = MustParseHex(BuiltInColorPresets.PinkTopHex);
-    private static readonly Color DefaultBottom = MustParseHex(BuiltInColorPresets.PinkBottomHex);
+    // Default Colored-theme gradient for fresh installs: the top built-in preset
+    // (blue-navy → lime, swapped from pink-orange in v0.5.6 to match the reordered
+    // BuiltInColorPresets.All). Used when AppSettings.ColoredTopHex / ColoredBottomHex
+    // are null (no settings.json yet) or unparseable.
+    private static readonly Color DefaultTop    = MustParseHex(BuiltInColorPresets.BlueTopHex);
+    private static readonly Color DefaultBottom = MustParseHex(BuiltInColorPresets.BlueBottomHex);
 
     /// <summary>
     /// The last-applied theme. Exposed for ContentDialog / other pop-up UI that lives on

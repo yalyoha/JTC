@@ -36,13 +36,13 @@ $base = if (Test-Path $settingsPath) {
 # hex values must match src/JTC/Services/AppSettings.cs — if you tweak a preset
 # there, mirror the change here so the screenshot filename stays meaningful.
 $configs = @(
-    @{ file = 'theme-preset-01-pink-orange.png';    note = 'Розово-оранжевая (built-in #1)'
-       fields = @{ Theme='Colored'; ColoredTopHex='#FFE52E71'; ColoredBottomHex='#FFFF8A00'
+    @{ file = 'theme-preset-01-blue-lime.png';      note = 'Сине-зелёная (built-in #1 — default)'
+       fields = @{ Theme='Colored'; ColoredTopHex='#FF324166'; ColoredBottomHex='#FF7AB317'
                    PlashkaBgHex='#FFFFFFFF'; PlashkaFgHex='#FF212121'
                    StatusIdleHex='#FF90A4AE'; StatusDownloadingHex='#FFFF9100'
                    StatusSeedingHex='#FF00E676'; StatusHashingHex='#FF2979FF'; StatusErrorHex='#FFFF1744' } },
-    @{ file = 'theme-preset-02-blue-lime.png';      note = 'Сине-зелёная (built-in #2)'
-       fields = @{ Theme='Colored'; ColoredTopHex='#FF324166'; ColoredBottomHex='#FF7AB317'
+    @{ file = 'theme-preset-02-pink-orange.png';    note = 'Розово-оранжевая (built-in #2)'
+       fields = @{ Theme='Colored'; ColoredTopHex='#FFE52E71'; ColoredBottomHex='#FFFF8A00'
                    PlashkaBgHex='#FFFFFFFF'; PlashkaFgHex='#FF212121'
                    StatusIdleHex='#FF90A4AE'; StatusDownloadingHex='#FFFF9100'
                    StatusSeedingHex='#FF00E676'; StatusHashingHex='#FF2979FF'; StatusErrorHex='#FFFF1744' } },

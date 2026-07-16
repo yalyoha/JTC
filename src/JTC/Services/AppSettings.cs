@@ -71,14 +71,18 @@ public static class BuiltInColorPresets
     // still tweak individual swatches after selection. All 10 stay listed at the top
     // of the ComboBox and are non-editable / non-deletable (edit + delete apply only
     // to user-saved presets appended below them).
+    //
+    // v0.5.6 note: Blue-Lime is intentionally first — it doubles as the default palette
+    // for fresh installs (see ThemeHelper.DefaultTop / DefaultBottom). Pink-Orange is
+    // the legacy default from v0.3-v0.5.5, kept as #2.
     public static readonly IReadOnlyList<ColorPreset> All = new[]
     {
-        new ColorPreset { Name = PinkOrangeName,        TopHex = PinkTopHex,     BottomHex = PinkBottomHex,
+        new ColorPreset { Name = BlueLimeName,          TopHex = BlueTopHex,     BottomHex = BlueBottomHex,
             PlashkaBgHex = "#FFFFFFFF", PlashkaFgHex = "#FF212121",
             StatusIdleHex        = "#FF90A4AE", StatusDownloadingHex = "#FFFF9100",
             StatusSeedingHex     = "#FF00E676", StatusHashingHex     = "#FF2979FF",
             StatusErrorHex       = "#FFFF1744" },
-        new ColorPreset { Name = BlueLimeName,          TopHex = BlueTopHex,     BottomHex = BlueBottomHex,
+        new ColorPreset { Name = PinkOrangeName,        TopHex = PinkTopHex,     BottomHex = PinkBottomHex,
             PlashkaBgHex = "#FFFFFFFF", PlashkaFgHex = "#FF212121",
             StatusIdleHex        = "#FF90A4AE", StatusDownloadingHex = "#FFFF9100",
             StatusSeedingHex     = "#FF00E676", StatusHashingHex     = "#FF2979FF",
