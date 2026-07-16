@@ -919,42 +919,91 @@ public sealed partial class MainWindow : Window
         dialog.Resources["ContentDialogMaxWidth"] = 900.0;
         ThemeHelper.ApplyToDialog(dialog, ThemeHelper.CurrentTheme);
 
-        // Save-as-preset: nested ContentDialog for the name, then append and select it.
-        savePresetBtn.Click += async (_, _) =>
+        // Save-as-preset: WinUI 3 disallows stacking ContentDialogs (a nested ShowAsync
+        // throws COMException "Only one ContentDialog can be open at a time" — inside an
+        // async void handler that bubbles as an unhandled exception and crashes the
+        // process). A Flyout, unlike ContentDialog, IS allowed to render on top of an
+        // open ContentDialog — hence the manual TextBox + OK/Cancel row here.
+        var nameBox = new Microsoft.UI.Xaml.Controls.TextBox
         {
-            var nameBox = new Microsoft.UI.Xaml.Controls.TextBox
-            {
-                Header = "Название пресета",
-                PlaceholderText = "например, Закат",
-                MinWidth = 260,
-            };
-            var nameDialog = new Microsoft.UI.Xaml.Controls.ContentDialog
-            {
-                Title = "Сохранить пресет",
-                Content = nameBox,
-                PrimaryButtonText = "Сохранить",
-                CloseButtonText = "Отмена",
-                DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Primary,
-                XamlRoot = Content.XamlRoot,
-            };
-            ThemeHelper.ApplyToDialog(nameDialog, ThemeHelper.CurrentTheme);
-            var nameResult = await nameDialog.ShowAsync();
-            if (nameResult != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary) return;
+            Header = "Название пресета",
+            PlaceholderText = "например, Закат",
+            MinWidth = 240,
+        };
+        var errorLine = new TextBlock
+        {
+            Foreground = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0x60, 0x60)),
+            Visibility = Visibility.Collapsed,
+            TextWrapping = TextWrapping.Wrap,
+        };
+        var flyoutOkBtn = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = "OK",
+            Style = (Style)Application.Current.Resources["AccentButtonStyle"],
+            MinWidth = 80,
+        };
+        var flyoutCancelBtn = new Microsoft.UI.Xaml.Controls.Button
+        {
+            Content = "Отмена",
+            MinWidth = 80,
+        };
+        var flyoutButtonRow = new Microsoft.UI.Xaml.Controls.StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        flyoutButtonRow.Children.Add(flyoutCancelBtn);
+        flyoutButtonRow.Children.Add(flyoutOkBtn);
+        var flyoutContent = new Microsoft.UI.Xaml.Controls.StackPanel
+        {
+            Spacing = 10,
+            MinWidth = 260,
+        };
+        flyoutContent.Children.Add(new TextBlock
+        {
+            Text = "Сохранить пресет",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            FontSize = 15,
+        });
+        flyoutContent.Children.Add(nameBox);
+        flyoutContent.Children.Add(errorLine);
+        flyoutContent.Children.Add(flyoutButtonRow);
 
+        var savePresetFlyout = new Microsoft.UI.Xaml.Controls.Flyout
+        {
+            Content = flyoutContent,
+            Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Top,
+        };
+        FlyoutBase.SetAttachedFlyout(savePresetBtn, savePresetFlyout);
+        savePresetBtn.Click += (_, _) =>
+        {
+            nameBox.Text = "";
+            errorLine.Visibility = Visibility.Collapsed;
+            FlyoutBase.ShowAttachedFlyout(savePresetBtn);
+            nameBox.Focus(FocusState.Programmatic);
+        };
+        flyoutCancelBtn.Click += (_, _) => savePresetFlyout.Hide();
+        flyoutOkBtn.Click += (_, _) =>
+        {
             var name = nameBox.Text?.Trim();
-            if (string.IsNullOrEmpty(name)) return;
-
-            // Reject duplicate names (case-insensitive) so the ComboBox doesn't grow two
-            // entries with the same label — user has to pick a different name or delete
-            // the existing one first.
+            if (string.IsNullOrEmpty(name))
+            {
+                errorLine.Text = "Введите название пресета.";
+                errorLine.Visibility = Visibility.Visible;
+                return;
+            }
+            // Reject duplicate names (case-insensitive) so the ComboBox doesn't grow
+            // two entries with the same label — user must pick a different name or
+            // delete the existing one first.
             bool duplicate = BuiltInColorPresets.All.Any(p => string.Equals(p.Name, name, System.StringComparison.OrdinalIgnoreCase))
                           || workingPresets.Any(p => string.Equals(p.Name, name, System.StringComparison.OrdinalIgnoreCase));
             if (duplicate)
             {
-                await ShowErrorAsync("Пресет уже существует", $"Пресет с именем «{name}» уже есть. Выберите другое имя.");
+                errorLine.Text = $"Пресет с именем «{name}» уже есть. Выберите другое имя.";
+                errorLine.Visibility = Visibility.Visible;
                 return;
             }
-
             workingPresets.Add(new ColorPreset
             {
                 Name = name,
@@ -962,6 +1011,7 @@ public sealed partial class MainWindow : Window
                 BottomHex = ThemeHelper.ToHex(workingBottom),
             });
             RebuildPresetItems(BuiltInColorPresets.All.Count + workingPresets.Count - 1);
+            savePresetFlyout.Hide();
         };
 
         deletePresetBtn.Click += (_, _) =>
