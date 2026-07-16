@@ -130,6 +130,25 @@ public static class ThemeHelper
         if (Application.Current.Resources["AppFontFamily"] is FontFamily appFont)
             dialog.FontFamily = appFont;
 
+        // Force AccentButton text to white for EVERY theme. On some Windows 10 systems
+        // the OS-chosen accent colour is light enough that WinUI picks a dark foreground
+        // brush for contrast, and the "Сохранить" text on the primary button ends up
+        // nearly invisible against our styled backgrounds (screenshots/windows10.jpg).
+        // White reads reliably against Colored's user-picked accent, Dark's system blue,
+        // and Light's system blue alike.
+        var whiteBrush = new SolidColorBrush(Color.FromArgb(0xFF, 0xFF, 0xFF, 0xFF));
+        dialog.Resources["AccentButtonForeground"]            = whiteBrush;
+        dialog.Resources["AccentButtonForegroundPointerOver"] = whiteBrush;
+        dialog.Resources["AccentButtonForegroundPressed"]     = whiteBrush;
+        // Belt-and-braces: some template snapshots the ThemeResource lookup at
+        // ApplyTemplate time and doesn't repaint on Resources changes — reach in
+        // once the visual tree is materialized and set Foreground directly too.
+        dialog.Loaded += (_, _) =>
+        {
+            if (FindDescendantByName(dialog, "PrimaryButton") is Control pb)
+                pb.Foreground = whiteBrush;
+        };
+
         if (!IsColored(theme))
             return;
 
@@ -275,7 +294,10 @@ public static class ThemeHelper
         dialog.Resources["ComboBoxDropDownBackgroundPointerPressed"] = MakeColoredGradient(top, bottom);
 
         if (FindDescendantByName(dialog, "PrimaryButton") is Control pb)
+        {
             pb.Background = accentBase;
+            pb.Foreground = new SolidColorBrush(White);
+        }
     }
 
     /// <summary>

@@ -1,11 +1,11 @@
 ; Inno Setup script for Junior Torrent Client (JTC)
 ; Compile with: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\JTC.iss
-; Output: dist\JTC-v0.4.2-setup.exe
+; Output: dist\JTC-v0.4.3-setup.exe
 
 #define MyAppName "Junior Torrent Client"
 #define MyAppShortName "JTC"
 #define MyAppFolderName "JuniorTorrentClient"
-#define MyAppVersion "0.4.2"
+#define MyAppVersion "0.4.3"
 #define MyAppPublisher "yalyoha"
 #define MyAppURL "https://github.com/yalyoha/JTC"
 #define MyAppExeName "JTC.exe"
@@ -43,14 +43,17 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
 ; Windows 10 20H1+ / Windows 11
 MinVersion=10.0.19041
-; Detect an already-running JTC via its SingleInstance mutex (see SingleInstance.cs).
-; Must match the exact name — "Local\" scope, per-user.
-AppMutex=Local\JTC-SingleInstance-yalyoha
+; Historically we set AppMutex here so Inno itself would prompt on a running JTC.
+; That dialog looped when the running JTC was too old to react to the graceful
+; @shutdown marker (pre-v0.3.36): the user clicked Retry, mutex still held, dialog
+; came back, retry again, and so on forever. Our PrepareToInstall now does both
+; graceful shutdown AND unconditional taskkill /F fallback, so relying on that path
+; alone avoids the loop entirely. Keeping AppMutex removed also means the Inno
+; built-in dialog can't compete with our own error text.
+;
 ; Inno's built-in CloseApplications sends WM_CLOSE via Restart Manager, which our
 ; OnAppWindowClosing absorbs (window hides to tray instead of exiting), leaving
-; JTC.exe locked and the installer hanging / crashing. Instead we run our own
-; PrepareToInstall in [Code] that drops the shutdown marker into JTC's inbox and
-; waits for the mutex to release — the app then hard-exits via ShutdownRequested.
+; JTC.exe locked. PrepareToInstall in [Code] does the actual shutdown.
 CloseApplications=no
 RestartApplications=no
 
