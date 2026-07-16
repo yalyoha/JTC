@@ -762,7 +762,7 @@ public sealed partial class MainWindow : Window
             Header = "Папка загрузок",
             Text = current.LastDownloadDir ?? "",
             IsReadOnly = true,
-            MinWidth = 340,
+            MinWidth = 220,
             VerticalAlignment = VerticalAlignment.Stretch,
         };
         var browseBtn = new Microsoft.UI.Xaml.Controls.Button
@@ -815,8 +815,10 @@ public sealed partial class MainWindow : Window
         if (themeBox.SelectedIndex < 0) themeBox.SelectedIndex = 0;
 
         // Path row is promoted to the full-width top of the dialog (see outerPanel below);
-        // the left column keeps just the two narrow controls under it.
-        var leftCol = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 16, MinWidth = 260 };
+        // the left column keeps just the two narrow controls under it. Compact MinWidth
+        // so the two-column strip still fits without horizontal scroll when the parent
+        // window is dragged narrow.
+        var leftCol = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 16, MinWidth = 200 };
         leftCol.Children.Add(maxBox);
         leftCol.Children.Add(themeBox);
 
@@ -1027,7 +1029,7 @@ public sealed partial class MainWindow : Window
         var rightCol = new Microsoft.UI.Xaml.Controls.StackPanel
         {
             Spacing = 12,
-            MinWidth = 240,
+            MinWidth = 200,
             Margin = new Thickness(24, 0, 0, 0),
         };
         rightCol.Children.Add(presetBox);

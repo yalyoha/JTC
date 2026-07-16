@@ -139,6 +139,21 @@ public static class ThemeHelper
         if (Application.Current.Resources["AppFontFamily"] is FontFamily appFont)
             dialog.FontFamily = appFont;
 
+        // Enable scrolling inside the dialog's content area. The default WinUI
+        // ContentDialog template wraps its Content in a ContentScrollViewer with BOTH
+        // scroll bars disabled — so a dialog with tall content on a small window (our
+        // MinWindowHeight is 360 DIP) just clips the bottom and hides the Save/Cancel
+        // buttons. Turning both scroll bars to Auto lets the user reach every control;
+        // Save/Cancel live in the separate CommandSpace strip and stay pinned regardless.
+        RunNowOrOnLoad(dialog, () =>
+        {
+            if (FindDescendantByName(dialog, "ContentScrollViewer") is Microsoft.UI.Xaml.Controls.ScrollViewer csv)
+            {
+                csv.VerticalScrollBarVisibility   = Microsoft.UI.Xaml.Controls.ScrollBarVisibility.Auto;
+                csv.HorizontalScrollBarVisibility = Microsoft.UI.Xaml.Controls.ScrollBarVisibility.Auto;
+            }
+        });
+
         // Force AccentButton text to white for EVERY theme. On some Windows 10 systems
         // the OS-chosen accent colour is light enough that WinUI picks a dark foreground
         // brush for contrast, and the "Сохранить" text on the primary button ends up
