@@ -404,8 +404,14 @@ public sealed class TorrentService : IAsyncDisposable
         _ = StartNextIfSlotFreeAsync();
     }
 
+    // True while LoadStateAsync is replaying persisted torrents at startup.
+    // Consumers (MainViewModel) use it to decide row-order: restored torrents
+    // append in persisted order, user-initiated adds prepend to the top.
+    public bool IsRestoringState { get; private set; }
+
     public async Task LoadStateAsync()
     {
+        IsRestoringState = true;
         var items = await _store.LoadAsync();
         foreach (var item in items)
         {
@@ -437,6 +443,7 @@ public sealed class TorrentService : IAsyncDisposable
                 // Ignore individual failures; keep loading the rest.
             }
         }
+        IsRestoringState = false;
     }
 
     /// <summary>

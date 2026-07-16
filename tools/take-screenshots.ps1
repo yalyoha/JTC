@@ -124,7 +124,11 @@ foreach ($cfg in $configs) {
     $obj | ConvertTo-Json -Depth 6 | Set-Content -Path $settingsPath -Encoding UTF8
 
     $proc = Start-Process $jtcExe -PassThru
-    Start-Sleep -Seconds 3
+    # Longer wait than v0.5.6 (3 s) so MonoTorrent has time to re-attach to
+    # the fast-resume state, discover peers, and flip the row status from
+    # Waiting -> Downloading — so the 25 % status-tint on the progress fill
+    # renders in the actual download colour (orange), not the muted idle grey.
+    Start-Sleep -Seconds 10
 
     $running = Get-Process -Name JTC -EA SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
     if (-not $running) { Write-Warning "  no JTC window"; continue }

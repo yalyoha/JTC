@@ -41,9 +41,18 @@ public sealed partial class MainViewModel : ObservableObject
 
     private void OnTorrentAdded(object? sender, TorrentManager m)
     {
+        // Snapshot the flag OUTSIDE the dispatcher hop — by the time the UI
+        // thread runs, LoadStateAsync may have finished and IsRestoringState
+        // flipped back to false, which would wrongly promote every restored
+        // torrent to the top.
+        var restoring = _service.IsRestoringState;
         _dispatcher.TryEnqueue(() =>
         {
-            Torrents.Add(new TorrentViewModel(m, _dispatcher));
+            var vm = new TorrentViewModel(m, _dispatcher);
+            if (restoring)
+                Torrents.Add(vm);           // preserve persisted order at startup
+            else
+                Torrents.Insert(0, vm);     // user-added → top of the list
         });
     }
 
