@@ -70,22 +70,32 @@ public static class SingleInstance
 
     /// <summary>
     /// Called once on the primary instance after the main window is ready. Drains any
-    /// pre-existing inbox files, then watches for new drops from later "Open with" launches.
+    /// pre-existing inbox files (silently discarding stale @shutdown markers), then
+    /// watches for new drops from later "Open with" launches.
     /// </summary>
     public static void StartWatching()
     {
         Directory.CreateDirectory(InboxDir);
-        DrainInbox();
+        // Any @shutdown marker present at startup was left there by an installer that
+        // already succeeded — the process it was meant to kill is dead (installer ran
+        // taskkill /F as fallback in v0.4.2+). Acting on it here would make the fresh
+        // JTC kill itself the moment it starts. Silently discard those; process all
+        // other pre-existing files normally so a "double-click torrent while app was
+        // starting" hand-off still works.
+        DrainInbox(ignoreShutdownMarker: true);
         _watcher?.Dispose();
         _watcher = new FileSystemWatcher(InboxDir, "*.txt")
         {
             NotifyFilter = NotifyFilters.FileName | NotifyFilters.LastWrite,
             EnableRaisingEvents = true,
         };
+        // Subsequent DrainInbox calls (from FileSystemWatcher events) DO act on
+        // @shutdown — that's the intended path when an installer runs while the
+        // primary instance is alive.
         _watcher.Created += (_, _) => DrainInbox();
     }
 
-    private static void DrainInbox()
+    private static void DrainInbox(bool ignoreShutdownMarker = false)
     {
         try
         {
@@ -95,10 +105,14 @@ public static class SingleInstance
                 try { content = File.ReadAllText(file).Trim(); }
                 catch { /* file may still be locked by writer; skip and retry next tick */ }
 
-                if (string.IsNullOrEmpty(content))
+                if (string.Equals(content, ShutdownMarker, StringComparison.OrdinalIgnoreCase))
+                {
+                    if (!ignoreShutdownMarker)
+                        ShutdownRequested?.Invoke();
+                    // else: fall through to File.Delete below so we drop the stale marker.
+                }
+                else if (string.IsNullOrEmpty(content))
                     ShowWindowRequested?.Invoke();
-                else if (string.Equals(content, ShutdownMarker, StringComparison.OrdinalIgnoreCase))
-                    ShutdownRequested?.Invoke();
                 else if (content.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
                     MagnetReceived?.Invoke(content);
                 else
