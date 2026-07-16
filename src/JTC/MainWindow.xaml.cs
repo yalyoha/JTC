@@ -31,6 +31,14 @@ public sealed partial class MainWindow : Window
     // so there is no ambiguity.
     private bool _isHiddenToTray;
 
+    // Update-check throttle state. GitHub allows 60 unauthenticated requests per hour
+    // per IP, and refocusing the window shouldn't hammer that budget; 30 min per session
+    // is comfortable. _snoozedVersion records a version the user dismissed with "Позже"
+    // so we don't re-prompt for the same release until they restart.
+    private DateTime _lastUpdateCheckUtc = DateTime.MinValue;
+    private Version? _snoozedVersion;
+    private bool _updateFlowInProgress;
+
     public MainWindow(TorrentService service)
     {
         _service = service;
@@ -77,6 +85,11 @@ public sealed partial class MainWindow : Window
         AppWindow.Closing += OnAppWindowClosing;
         TrayIcon.LeftClickCommand = new RelayCommand(ToggleFromTray);
 
+        // Auto-update check: fires whenever focus lands on the window (initial launch,
+        // alt-tab back in, restore from tray). Throttled to once per 30 min per session
+        // to stay well under GitHub's 60 req/hr unauthenticated rate limit.
+        Activated += OnWindowActivated;
+
         // Wire tray context-flyout items. Use Command instead of Click event because
         // clicks on MenuFlyoutItems inside TaskbarIcon.ContextFlyout haven't been
         // firing in this H.NotifyIcon.WinUI version (verified via empty debug.log).
@@ -97,6 +110,151 @@ public sealed partial class MainWindow : Window
         {
             mf.Opened += (_, _) => DebugLog.Info("Tray context flyout opened");
         }
+    }
+
+    private async void OnWindowActivated(object sender, WindowActivatedEventArgs args)
+    {
+        // Only react to activation, not deactivation.
+        if (args.WindowActivationState == WindowActivationState.Deactivated) return;
+        // 30-min throttle so alt-tab thrashing doesn't spam the GitHub API.
+        if (DateTime.UtcNow - _lastUpdateCheckUtc < TimeSpan.FromMinutes(30)) return;
+        // Guard against re-entry — one update flow at a time.
+        if (_updateFlowInProgress) return;
+        _lastUpdateCheckUtc = DateTime.UtcNow;
+
+        try
+        {
+            var info = await UpdateService.CheckLatestVersionAsync();
+            if (info is null) return;
+            var current = UpdateService.CurrentVersion();
+            if (current is null) return;
+            if (!UpdateService.IsNewer(info.Version, current)) return;
+            if (_snoozedVersion is not null && _snoozedVersion.Equals(info.Version)) return;
+
+            _updateFlowInProgress = true;
+            try { await ShowUpdatePromptAsync(info); }
+            finally { _updateFlowInProgress = false; }
+        }
+        catch (Exception ex) { DebugLog.Error("OnWindowActivated update check", ex); }
+    }
+
+    private async Task ShowUpdatePromptAsync(UpdateInfo info)
+    {
+        var currentVerText = UpdateService.CurrentVersion()?.ToString(3) ?? "?";
+        var headline = new TextBlock
+        {
+            Text = $"Обнаружена новая версия {info.TagName}.\nСейчас установлена v{currentVerText}.",
+            TextWrapping = TextWrapping.Wrap,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+        };
+        var notesHeader = new TextBlock
+        {
+            Text = "Что изменилось:",
+            Margin = new Thickness(0, 12, 0, 4),
+            Opacity = 0.8,
+        };
+        var notesBlock = new TextBlock
+        {
+            Text = string.IsNullOrWhiteSpace(info.ReleaseNotes)
+                ? "(автор релиза не оставил описания)"
+                : info.ReleaseNotes,
+            TextWrapping = TextWrapping.Wrap,
+            IsTextSelectionEnabled = true,
+        };
+        var notesScroll = new Microsoft.UI.Xaml.Controls.ScrollViewer
+        {
+            Content = notesBlock,
+            MaxHeight = 320,
+            VerticalScrollBarVisibility = Microsoft.UI.Xaml.Controls.ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = Microsoft.UI.Xaml.Controls.ScrollBarVisibility.Disabled,
+        };
+        var stack = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 0, MinWidth = 460, MaxWidth = 640 };
+        stack.Children.Add(headline);
+        stack.Children.Add(notesHeader);
+        stack.Children.Add(notesScroll);
+
+        var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
+        {
+            Title = "Доступно обновление",
+            Content = stack,
+            PrimaryButtonText = "Обновить",
+            CloseButtonText = "Позже",
+            DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Primary,
+            XamlRoot = Content.XamlRoot,
+        };
+        // Give the notes area room to breathe on wide releases like v0.4.0.
+        dialog.Resources["ContentDialogMaxWidth"] = 720.0;
+        ThemeHelper.ApplyToDialog(dialog, ThemeHelper.CurrentTheme);
+        Microsoft.UI.Xaml.Controls.ContentDialogResult res;
+        try { res = await dialog.ShowAsync(); }
+        catch (Exception ex)
+        {
+            // Another dialog is already open (settings, delete-confirm, etc.). Swallow
+            // and try again on the next Activated tick — no need to snooze the version.
+            DebugLog.Error("ShowUpdatePromptAsync", ex);
+            return;
+        }
+        if (res != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary)
+        {
+            _snoozedVersion = info.Version;
+            return;
+        }
+
+        await DownloadAndRunInstallerAsync(info);
+    }
+
+    private async Task DownloadAndRunInstallerAsync(UpdateInfo info)
+    {
+        var status = new TextBlock { Text = "Скачивание установщика…" };
+        var bar = new Microsoft.UI.Xaml.Controls.ProgressBar
+        {
+            Minimum = 0,
+            Maximum = 100,
+            Value = 0,
+            Width = 380,
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+        var content = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 4, MinWidth = 400 };
+        content.Children.Add(status);
+        content.Children.Add(bar);
+
+        var progressDialog = new Microsoft.UI.Xaml.Controls.ContentDialog
+        {
+            Title = $"Обновление до {info.TagName}",
+            Content = content,
+            // No Cancel button — we don't have a cancellation token wired into the download.
+            // Closing the dialog wouldn't actually stop the network transfer, so hiding the
+            // option is more honest than showing one that lies.
+            XamlRoot = Content.XamlRoot,
+        };
+        ThemeHelper.ApplyToDialog(progressDialog, ThemeHelper.CurrentTheme);
+
+        var showTask = progressDialog.ShowAsync();
+
+        string? path = null;
+        try
+        {
+            var progress = new Progress<double>(pct =>
+            {
+                var v = pct * 100;
+                bar.Value = v;
+                status.Text = $"Скачивание установщика… {v:F0}%";
+            });
+            path = await UpdateService.DownloadInstallerAsync(info, progress);
+        }
+        catch (Exception ex) { DebugLog.Error("DownloadAndRunInstallerAsync", ex); }
+
+        progressDialog.Hide();
+        try { await showTask; } catch { }
+
+        if (path is null)
+        {
+            await ShowErrorAsync("Не удалось скачать обновление",
+                $"Проверьте подключение к сети и попробуйте снова.\n\nПрямая ссылка: {info.HtmlUrl}");
+            return;
+        }
+        // Hand off to the installer, then die so it can freely overwrite our files.
+        UpdateService.LaunchInstallerAndExit(path);
     }
 
     private void OnAppWindowClosing(Microsoft.UI.Windowing.AppWindow sender,
