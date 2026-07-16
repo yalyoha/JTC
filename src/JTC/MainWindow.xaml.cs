@@ -19,7 +19,14 @@ public sealed partial class MainWindow : Window
 {
     public MainViewModel ViewModel { get; }
     private readonly TorrentService _service;
-    private bool _reallyExiting;
+
+    // True while the window is hidden to the notification-area icon (X-close or explicit
+    // Hide). Tracked explicitly instead of asking Win32 — AppWindow.Hide() clears
+    // WS_VISIBLE, but that state can also be cleared by OS-level animation transitions,
+    // and IsIconic vs IsWindowVisible give ambiguous answers when the window is animating
+    // between visible/minimized/hidden. Our own flag has one owner (Hide / RestoreFromTray),
+    // so there is no ambiguity.
+    private bool _isHiddenToTray;
 
     public MainWindow(TorrentService service)
     {
@@ -60,7 +67,7 @@ public sealed partial class MainWindow : Window
         // Torrent client stays alive when the user closes the window — engine keeps
         // seeding/leeching in the background. Real quit is only via the tray "Выход" item.
         AppWindow.Closing += OnAppWindowClosing;
-        TrayIcon.LeftClickCommand = new RelayCommand(RestoreFromTray);
+        TrayIcon.LeftClickCommand = new RelayCommand(ToggleFromTray);
 
         // Wire tray context-flyout items. Use Command instead of Click event because
         // clicks on MenuFlyoutItems inside TaskbarIcon.ContextFlyout haven't been
@@ -87,9 +94,13 @@ public sealed partial class MainWindow : Window
     private void OnAppWindowClosing(Microsoft.UI.Windowing.AppWindow sender,
                                     Microsoft.UI.Windowing.AppWindowClosingEventArgs args)
     {
-        if (_reallyExiting) return;
+        // Real quit is only via the tray "Выход" (Process.Kill) — X-close always hides
+        // to tray. No _reallyExiting bypass: we don't want an accidental Close() call to
+        // shut the engine down mid-download.
         args.Cancel = true;
         AppWindow.Hide();
+        _isHiddenToTray = true;
+        DebugLog.Info("Window closing → hidden to tray");
     }
 
     public void RestoreFromTray()
@@ -97,6 +108,30 @@ public sealed partial class MainWindow : Window
         AppWindow.Show();
         AppWindow.MoveInZOrderAtTop();
         Activate();
+        _isHiddenToTray = false;
+        DebugLog.Info("Window restored from tray");
+    }
+
+    /// <summary>
+    /// Tray left-click toggle: hide the window if it's currently shown, restore it if
+    /// hidden. Uses our own tracked flag (see _isHiddenToTray comment) rather than
+    /// Win32 IsWindowVisible so the state is unambiguous during animation transitions.
+    /// A minimized window (user pressed the minimize caption button) counts as "shown"
+    /// and click will hide it — matches how Discord / Telegram tray icons behave.
+    /// </summary>
+    public void ToggleFromTray()
+    {
+        DebugLog.Info($"Tray left-click fired; hidden={_isHiddenToTray}");
+        if (_isHiddenToTray)
+        {
+            RestoreFromTray();
+        }
+        else
+        {
+            AppWindow.Hide();
+            _isHiddenToTray = true;
+            DebugLog.Info("  → hidden to tray");
+        }
     }
 
     private void TrayShow_Click(object sender, RoutedEventArgs e) => RestoreFromTray();
@@ -577,14 +612,16 @@ public sealed partial class MainWindow : Window
             Width = 200,
             HorizontalAlignment = HorizontalAlignment.Left,
         };
-        themeBox.Items.Add("Фирменная");
+        themeBox.Items.Add("Фирменная 1");
+        themeBox.Items.Add("Фирменная 2");
         themeBox.Items.Add("Чёрная");
         themeBox.Items.Add("Белая");
         themeBox.SelectedIndex = current.Theme switch
         {
-            AppTheme.Dark  => 1,
-            AppTheme.Light => 2,
-            _              => 0,
+            AppTheme.Brand2 => 1,
+            AppTheme.Dark   => 2,
+            AppTheme.Light  => 3,
+            _               => 0,
         };
 
         var panel = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 16, MinWidth = 420 };
@@ -610,8 +647,9 @@ public sealed partial class MainWindow : Window
         if (newMax < 1) newMax = 1;
         var newTheme = themeBox.SelectedIndex switch
         {
-            1 => AppTheme.Dark,
-            2 => AppTheme.Light,
+            1 => AppTheme.Brand2,
+            2 => AppTheme.Dark,
+            3 => AppTheme.Light,
             _ => AppTheme.Brand,
         };
 

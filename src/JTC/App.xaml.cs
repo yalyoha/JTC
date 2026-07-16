@@ -47,6 +47,14 @@ public partial class App : Application
             window.DispatcherQueue.TryEnqueue(async () => await window.OpenMagnetAsync(magnet));
         SingleInstance.ShowWindowRequested += () =>
             window.DispatcherQueue.TryEnqueue(window.RestoreFromTray);
+        // Installer signals shutdown via the inbox marker file so it can safely overwrite
+        // JTC.exe and its DLLs. Hard-kill matches the tray "Выход" path — torrent state is
+        // persisted after every add/remove/pause/resume, so nothing important is lost.
+        SingleInstance.ShutdownRequested += () =>
+        {
+            DebugLog.Info("SingleInstance shutdown marker received — killing process");
+            System.Diagnostics.Process.GetCurrentProcess().Kill();
+        };
         SingleInstance.StartWatching();
 
         // Handle the launch argument this very process was given, if any — either a

@@ -1,11 +1,11 @@
 ; Inno Setup script for Junior Torrent Client (JTC)
 ; Compile with: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\JTC.iss
-; Output: dist\JTC-v0.3.27-setup.exe
+; Output: dist\JTC-v0.3.36-setup.exe
 
 #define MyAppName "Junior Torrent Client"
 #define MyAppShortName "JTC"
 #define MyAppFolderName "JuniorTorrentClient"
-#define MyAppVersion "0.3.27"
+#define MyAppVersion "0.3.36"
 #define MyAppPublisher "yalyoha"
 #define MyAppURL "https://github.com/yalyoha/JTC"
 #define MyAppExeName "JTC.exe"
@@ -43,6 +43,16 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName} {#MyAppVersion}
 ; Windows 10 20H1+ / Windows 11
 MinVersion=10.0.19041
+; Detect an already-running JTC via its SingleInstance mutex (see SingleInstance.cs).
+; Must match the exact name — "Local\" scope, per-user.
+AppMutex=Local\JTC-SingleInstance-yalyoha
+; Inno's built-in CloseApplications sends WM_CLOSE via Restart Manager, which our
+; OnAppWindowClosing absorbs (window hides to tray instead of exiting), leaving
+; JTC.exe locked and the installer hanging / crashing. Instead we run our own
+; PrepareToInstall in [Code] that drops the shutdown marker into JTC's inbox and
+; waits for the mutex to release — the app then hard-exits via ShutdownRequested.
+CloseApplications=no
+RestartApplications=no
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"
@@ -66,3 +76,45 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChang
 ; Leave the app data (%LocalAppData%\JTC, and %LocalAppData%\TClient for old installs) alone
 ; by default — that's the user's downloads / torrent list. Just remove the install directory.
 Type: filesandordirs; Name: "{app}"
+
+[Code]
+const
+  JtcMutex        = 'Local\JTC-SingleInstance-yalyoha';
+  ShutdownTimeout = 10000; // ms
+  PollInterval    = 200;
+
+// Called by Inno right before the install phase. If JTC is running (holds the
+// SingleInstance mutex), drop the "@shutdown" marker into its inbox and wait for
+// the mutex to release. On timeout, return a non-empty error string — Inno shows
+// it in a dialog and aborts the install without touching any files.
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  MarkerDir:  String;
+  MarkerPath: String;
+  Elapsed:    Integer;
+begin
+  Result := '';
+  if not CheckForMutexes(JtcMutex) then
+    Exit;
+
+  MarkerDir := ExpandConstant('{localappdata}\JTC\inbox');
+  if not DirExists(MarkerDir) then
+    ForceDirectories(MarkerDir);
+  MarkerPath := MarkerDir + '\shutdown_' + IntToStr(GetTickCount) + '.txt';
+  if not SaveStringToFile(MarkerPath, '@shutdown', False) then
+  begin
+    Result := 'Не удалось создать файл-сигнал завершения работы JTC в ' + MarkerDir;
+    Exit;
+  end;
+
+  Elapsed := 0;
+  while (Elapsed < ShutdownTimeout) and CheckForMutexes(JtcMutex) do
+  begin
+    Sleep(PollInterval);
+    Elapsed := Elapsed + PollInterval;
+  end;
+
+  if CheckForMutexes(JtcMutex) then
+    Result := 'JTC не завершил работу за отведённое время. ' +
+              'Закройте его вручную через меню трея (правый клик по иконке → Выход) и запустите установку заново.';
+end;

@@ -15,6 +15,7 @@ public static class FileAssociation
     private const string OldProgId    = "TClient.Torrent"; // pre-rebrand — remove on next launch
     private const string FriendlyName = "Файл торрента (JTC)";
     private const string Extension    = ".torrent";
+    private const string AppRegName   = "JTC"; // key under HKCU\Software\RegisteredApplications
 
     // SHChangeNotify constants
     private const int SHCNE_ASSOCCHANGED = 0x08000000;
@@ -46,18 +47,45 @@ public static class FileAssociation
                 changed |= SetValueIfDifferent(cmdKey, null, openCommand);
             }
 
-            // 2. Extension: HKCU\Software\Classes\.torrent — set OpenWithProgIds entry.
-            //    We do NOT overwrite the (default) value to avoid stealing the default handler
-            //    from another torrent client that's already installed system-wide. Explorer
-            //    still lists us in "Open with" thanks to OpenWithProgIds.
+            // 2. Extension: HKCU\Software\Classes\.torrent
+            //    - (default) → our ProgId. This is what AssocQueryString reads when the
+            //      user hasn't gone through Windows' "Open with → Always" dialog (which
+            //      writes a hash-locked UserChoice that trumps everything). Browsers'
+            //      downloads-bar click uses AssocQueryString, so without this default,
+            //      clicking a freshly-downloaded .torrent in the browser silently no-ops.
+            //    - OpenWithProgIds → keep us in Explorer's picker as well.
+            //    UserChoice (HKCU\...\FileExts\.torrent\UserChoice) is hash-signed by
+            //    Windows and always wins over our (default), so if the user has explicitly
+            //    picked another torrent client, this write does not steal their choice.
             using (var extKey = Registry.CurrentUser.CreateSubKey($@"Software\Classes\{Extension}", writable: true))
-            using (var progIdsKey = extKey.CreateSubKey("OpenWithProgIds", writable: true))
             {
+                changed |= SetValueIfDifferent(extKey, null, ProgId);
+                using var progIdsKey = extKey.CreateSubKey("OpenWithProgIds", writable: true);
                 if (progIdsKey.GetValue(ProgId) is null)
                 {
                     progIdsKey.SetValue(ProgId, string.Empty, RegistryValueKind.String);
                     changed = true;
                 }
+            }
+
+            // 2b. RegisteredApplications entry — makes JTC show up in Windows Settings →
+            //     "Default apps" so the user can flip us to default (writing UserChoice)
+            //     through the OS UI without hunting through per-file "Open with" flows.
+            using (var capsKey = Registry.CurrentUser.CreateSubKey(
+                       $@"Software\Classes\{AppRegName}\Capabilities", writable: true))
+            {
+                changed |= SetValueIfDifferent(capsKey, "ApplicationName",        "Junior Torrent Client");
+                changed |= SetValueIfDifferent(capsKey, "ApplicationDescription", "BitTorrent-клиент JTC");
+                using var faKey = capsKey.CreateSubKey("FileAssociations", writable: true);
+                changed |= SetValueIfDifferent(faKey, Extension, ProgId);
+                using var upKey = capsKey.CreateSubKey("URLAssociations", writable: true);
+                changed |= SetValueIfDifferent(upKey, "magnet", ProgId);
+            }
+            using (var regAppsKey = Registry.CurrentUser.CreateSubKey(
+                       @"Software\RegisteredApplications", writable: true))
+            {
+                changed |= SetValueIfDifferent(regAppsKey, AppRegName,
+                    $@"Software\Classes\{AppRegName}\Capabilities");
             }
 
             // 3. magnet: URL protocol handler. Registered under HKCU\Software\Classes\magnet
@@ -148,6 +176,14 @@ public static class FileAssociation
             Registry.CurrentUser.DeleteSubKeyTree(@"Software\Classes\Applications\TClient.exe", throwOnMissingSubKey: false);
             using var owp = Registry.CurrentUser.OpenSubKey($@"Software\Classes\{Extension}\OpenWithProgIds", writable: true);
             owp?.DeleteValue(OldProgId, throwOnMissingValue: false);
+
+            // If the extension's (default) still points at the removed TClient.Torrent
+            // ProgId, AssocQueryString would resolve to a dead command line and browsers
+            // would silently fail — clear it so our new default write (step 2 in
+            // EnsureRegistered) is what actually takes effect.
+            using var extKey = Registry.CurrentUser.OpenSubKey($@"Software\Classes\{Extension}", writable: true);
+            if (extKey is not null && (extKey.GetValue(null) as string) == OldProgId)
+                extKey.DeleteValue(null, throwOnMissingValue: false);
         }
         catch (Exception ex) { DebugLog.Error("RemoveLegacyProgId", ex); }
     }

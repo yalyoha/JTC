@@ -37,9 +37,9 @@ public static class RowBrushes
         FillSelected: C(0xFF, 0xD4, 0xD4, 0xD4),
         Fg:           C(0xFF, 0x21, 0x21, 0x21));
 
-    // Brand uses the same white plashka as Light — it sits on the pink→orange gradient so
-    // the plashka fully covers the brand color inside its rectangle (only the 3 px inter-row
-    // margin lets the gradient peek through).
+    // Brand + Brand2 both use the same white plashka as Light — they sit on their respective
+    // brand gradients, and the plashka fully covers the gradient inside its rectangle (only
+    // the 3 px inter-row margin lets the gradient peek through).
     private static readonly Palette BrandPalette = LightPalette;
 
     // Dark: plashka sits on top of the #212121 window with a faint white lift so the row
@@ -61,8 +61,9 @@ public static class RowBrushes
     public static void Set(AppTheme theme) =>
         Current = theme switch
         {
-            AppTheme.Dark  => DarkPalette,
-            AppTheme.Light => LightPalette,
-            _              => BrandPalette,
+            AppTheme.Dark   => DarkPalette,
+            AppTheme.Light  => LightPalette,
+            AppTheme.Brand2 => BrandPalette, // same white plashkas as Brand
+            _               => BrandPalette,
         };
 }
