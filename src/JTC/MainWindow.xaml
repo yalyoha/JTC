@@ -157,7 +157,7 @@
                          also clips the two overlay Rectangles below so their gloss / shadow
                          gradients curve with the pill outline. Faint 1 px black border adds
                          subtle edge definition on both light and dark plashka colours. -->
-                    <Border CornerRadius="22"
+                    <Border CornerRadius="{x:Bind PlashkaCornerRadius, Mode=OneWay}"
                             Height="44"
                             BorderThickness="1"
                             BorderBrush="#22000000"
@@ -184,12 +184,21 @@
                             </MenuFlyout>
                         </Border.ContextFlyout>
                         <Grid>
-                            <!-- Status "drop" — small ellipse on the left, replaces the old 4 px
-                                 stripe that got mostly clipped by the pill's rounded ends. -->
+                            <!-- Two status indicators; one visible at a time based on
+                                 TorrentViewModel.StatusAsCircle (user toggles the style in
+                                 Settings). Circle reads better on capsule plashkas; the
+                                 4 px stripe is the pre-v0.5.5 shape, better paired with
+                                 a square plashka. -->
                             <Ellipse HorizontalAlignment="Left" VerticalAlignment="Center"
                                      Width="8" Height="8" Margin="14,0,0,0"
                                      Fill="{x:Bind StatusBrush, Mode=OneWay}"
+                                     Visibility="{x:Bind StatusCircleVisibility, Mode=OneWay}"
                                      IsHitTestVisible="False" />
+                            <Rectangle HorizontalAlignment="Left" VerticalAlignment="Stretch"
+                                       Width="4"
+                                       Fill="{x:Bind StatusBrush, Mode=OneWay}"
+                                       Visibility="{x:Bind StatusStripeVisibility, Mode=OneWay}"
+                                       IsHitTestVisible="False" />
                             <!-- Top gloss — semi-transparent white gradient covering the upper
                                  half, giving that classic aqua "gel" highlight. Works over any
                                  plashka colour: on white it's nearly invisible (subtle sheen);

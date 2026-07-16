@@ -56,7 +56,12 @@ public sealed partial class MainWindow : Window
         var (initPlBg, initPlFg) = ThemeHelper.PlashkaColorsFrom(initialSettings);
         var initStatus      = ThemeHelper.StatusColorsFrom(initialSettings);
         ThemeHelper.SetStatusColors(initStatus.Idle, initStatus.Downloading, initStatus.Seeding, initStatus.Hashing, initStatus.Error);
+        ThemeHelper.SetCornerRadii(initialSettings.ButtonCornerRadius, initialSettings.PlashkaCornerRadius);
         ThemeHelper.Apply(RootGrid, initialTheme, initialTop, initialBottom, initPlBg, initPlFg);
+        // Push button rounding to the six toolbar buttons up-front (row rounding is
+        // picked up by each TorrentViewModel's PlashkaCornerRadius default reading
+        // ThemeHelper.CurrentPlashkaCornerRadius set just above).
+        ApplyButtonCornerRadius(initialSettings.ButtonCornerRadius);
 
         // Merge title bar into the client area so Acrylic reads through it.
         ExtendsContentIntoTitleBar = true;
@@ -113,6 +118,17 @@ public sealed partial class MainWindow : Window
         {
             mf.Opened += (_, _) => DebugLog.Info("Tray context flyout opened");
         }
+    }
+
+    private void ApplyButtonCornerRadius(int radius)
+    {
+        var cr = new CornerRadius(radius);
+        OpenTorrentButton.CornerRadius = cr;
+        AddMagnetButton.CornerRadius   = cr;
+        ResumeButton.CornerRadius      = cr;
+        PauseButton.CornerRadius       = cr;
+        RemoveButton.CornerRadius      = cr;
+        SettingsButton.CornerRadius    = cr;
     }
 
     private async void OnWindowActivated(object sender, WindowActivatedEventArgs args)
@@ -761,6 +777,9 @@ public sealed partial class MainWindow : Window
         var snapshotStatusSeeding     = RowBrushes.StatusSeeding;
         var snapshotStatusHashing     = RowBrushes.StatusHashing;
         var snapshotStatusError       = RowBrushes.StatusError;
+        var snapshotBtnRadius       = ThemeHelper.CurrentButtonCornerRadius;
+        var snapshotPlashkaRadius   = ThemeHelper.CurrentPlashkaCornerRadius;
+        var snapshotIndicatorStyle  = ThemeHelper.CurrentStatusIndicatorStyle;
 
         // Forward-declared so ApplyLiveTheme can close over the dialog reference — the
         // dialog itself is constructed further down (needs all the child controls first).
@@ -781,6 +800,9 @@ public sealed partial class MainWindow : Window
         var (workingPlashkaBg, workingPlashkaFg) = ThemeHelper.PlashkaColorsFrom(current);
         var (workingStatusIdle, workingStatusDownloading, workingStatusSeeding,
              workingStatusHashing, workingStatusError) = ThemeHelper.StatusColorsFrom(current);
+        var workingButtonRadius    = current.ButtonCornerRadius;
+        var workingPlashkaRadius   = current.PlashkaCornerRadius;
+        var workingIndicatorStyle  = current.StatusIndicatorStyle;
 
         // ---- LEFT column: existing settings ---------------------------------------
         var pathBox = new Microsoft.UI.Xaml.Controls.TextBox
@@ -953,10 +975,17 @@ public sealed partial class MainWindow : Window
             // Push status colours first so row VMs pick them up in the following Refresh loop.
             ThemeHelper.SetStatusColors(workingStatusIdle, workingStatusDownloading,
                 workingStatusSeeding, workingStatusHashing, workingStatusError);
+            ThemeHelper.SetCornerRadii(workingButtonRadius, workingPlashkaRadius);
+            ThemeHelper.SetStatusIndicatorStyle(workingIndicatorStyle);
             ThemeHelper.Apply(RootGrid, theme, workingTop, workingBottom, workingPlashkaBg, workingPlashkaFg);
             ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, theme);
+            ApplyButtonCornerRadius(workingButtonRadius);
+            var newPlashkaCorner = new Microsoft.UI.Xaml.CornerRadius(workingPlashkaRadius);
+            var newAsCircle = workingIndicatorStyle == StatusIndicatorStyle.Circle;
             foreach (var vm in ViewModel.Torrents)
             {
+                vm.PlashkaCornerRadius = newPlashkaCorner;
+                vm.StatusAsCircle = newAsCircle;
                 vm.RefreshBrushes();
                 vm.Refresh();
             }
@@ -1203,11 +1232,79 @@ public sealed partial class MainWindow : Window
             IsChecked = current.AutoUpdateEnabled,
         };
 
+        // "Оформление" section — theme-independent shape controls (buttons + rows).
+        var buttonRadiusHeader = new TextBlock { Opacity = 0.85, Margin = new Thickness(0, 0, 0, 2) };
+        void SyncButtonRadiusHeader() =>
+            buttonRadiusHeader.Text = $"Скругление кнопок: {workingButtonRadius} px";
+        SyncButtonRadiusHeader();
+        var buttonRadiusSlider = new Microsoft.UI.Xaml.Controls.Slider
+        {
+            Minimum = 0, Maximum = 20, Value = workingButtonRadius,
+            StepFrequency = 1, SmallChange = 1, LargeChange = 4,
+            TickPlacement = Microsoft.UI.Xaml.Controls.Primitives.TickPlacement.None,
+            Width = 320, HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        buttonRadiusSlider.ValueChanged += (_, e) =>
+        {
+            workingButtonRadius = (int)Math.Round(e.NewValue);
+            SyncButtonRadiusHeader();
+            ApplyLiveTheme();
+        };
+
+        var plashkaRadiusHeader = new TextBlock { Opacity = 0.85, Margin = new Thickness(0, 0, 0, 2) };
+        void SyncPlashkaRadiusHeader() =>
+            plashkaRadiusHeader.Text = $"Скругление плашек: {workingPlashkaRadius} px";
+        SyncPlashkaRadiusHeader();
+        var plashkaRadiusSlider = new Microsoft.UI.Xaml.Controls.Slider
+        {
+            Minimum = 0, Maximum = 30, Value = workingPlashkaRadius,
+            StepFrequency = 1, SmallChange = 1, LargeChange = 4,
+            TickPlacement = Microsoft.UI.Xaml.Controls.Primitives.TickPlacement.None,
+            Width = 320, HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        plashkaRadiusSlider.ValueChanged += (_, e) =>
+        {
+            workingPlashkaRadius = (int)Math.Round(e.NewValue);
+            SyncPlashkaRadiusHeader();
+            ApplyLiveTheme();
+        };
+
+        // Status indicator style toggle. Off = Circle (v0.5.5+ default), On = Stripe
+        // (pre-v0.5.5 look, pairs well with plashkaRadius = 0).
+        var indicatorToggle = new Microsoft.UI.Xaml.Controls.ToggleSwitch
+        {
+            Header = "Индикатор статуса",
+            OnContent = "Полоска слева",
+            OffContent = "Кругляшок",
+            IsOn = workingIndicatorStyle == StatusIndicatorStyle.Stripe,
+            HorizontalAlignment = HorizontalAlignment.Left,
+        };
+        indicatorToggle.Toggled += (_, _) =>
+        {
+            workingIndicatorStyle = indicatorToggle.IsOn ? StatusIndicatorStyle.Stripe : StatusIndicatorStyle.Circle;
+            ApplyLiveTheme();
+        };
+
+        var appearanceSection = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 8 };
+        appearanceSection.Children.Add(new TextBlock
+        {
+            Text = "Оформление",
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Opacity = 0.85,
+            Margin = new Thickness(0, 4, 0, 4),
+        });
+        appearanceSection.Children.Add(buttonRadiusHeader);
+        appearanceSection.Children.Add(buttonRadiusSlider);
+        appearanceSection.Children.Add(plashkaRadiusHeader);
+        appearanceSection.Children.Add(plashkaRadiusSlider);
+        appearanceSection.Children.Add(indicatorToggle);
+
         var outerPanel = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 16, MinWidth = 320 };
         outerPanel.Children.Add(pathRow);
         outerPanel.Children.Add(maxBox);
         outerPanel.Children.Add(themeBox);
         outerPanel.Children.Add(autoUpdateChk);
+        outerPanel.Children.Add(appearanceSection);
         outerPanel.Children.Add(coloredSection);
 
         dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
@@ -1467,10 +1564,17 @@ public sealed partial class MainWindow : Window
             // Revert live-preview changes: restore snapshot theme + colours + plashka + statuses.
             ThemeHelper.SetStatusColors(snapshotStatusIdle, snapshotStatusDownloading,
                 snapshotStatusSeeding, snapshotStatusHashing, snapshotStatusError);
+            ThemeHelper.SetCornerRadii(snapshotBtnRadius, snapshotPlashkaRadius);
+            ThemeHelper.SetStatusIndicatorStyle(snapshotIndicatorStyle);
             ThemeHelper.Apply(RootGrid, snapshotTheme, snapshotTop, snapshotBottom, snapshotPlashkaBg, snapshotPlashkaFg);
             ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, snapshotTheme);
+            ApplyButtonCornerRadius(snapshotBtnRadius);
+            var revertPlashkaCorner = new Microsoft.UI.Xaml.CornerRadius(snapshotPlashkaRadius);
+            var revertAsCircle = snapshotIndicatorStyle == StatusIndicatorStyle.Circle;
             foreach (var vm in ViewModel.Torrents)
             {
+                vm.PlashkaCornerRadius = revertPlashkaCorner;
+                vm.StatusAsCircle = revertAsCircle;
                 vm.RefreshBrushes();
                 vm.Refresh();
             }
@@ -1498,6 +1602,9 @@ public sealed partial class MainWindow : Window
             StatusErrorHex       = ThemeHelper.ToHex(workingStatusError),
             CustomPresets        = workingPresets,
             AutoUpdateEnabled    = autoUpdateChk.IsChecked ?? true,
+            ButtonCornerRadius   = workingButtonRadius,
+            PlashkaCornerRadius  = workingPlashkaRadius,
+            StatusIndicatorStyle = workingIndicatorStyle,
         };
         SettingsStore.Save(updated);
 

@@ -38,6 +38,27 @@ public static class ThemeHelper
     /// <summary>Plashka (row) text colour for the Colored theme.</summary>
     public static Color CurrentPlashkaFg { get; private set; } = MustParseHex(DefaultColors.WhitePlashkaFgHex);
 
+    /// <summary>Toolbar-button corner radius. New TorrentViewModels read this at construction.</summary>
+    public static int CurrentButtonCornerRadius { get; private set; } = 16;
+
+    /// <summary>Row (plashka) corner radius. New TorrentViewModels read this at construction.</summary>
+    public static int CurrentPlashkaCornerRadius { get; private set; } = 22;
+
+    /// <summary>Update the cached corner-radius values so newly-created row VMs pick them up.</summary>
+    public static void SetCornerRadii(int buttonRadius, int plashkaRadius)
+    {
+        CurrentButtonCornerRadius  = buttonRadius;
+        CurrentPlashkaCornerRadius = plashkaRadius;
+    }
+
+    /// <summary>Which status indicator variant to show — Circle (dot) or Stripe (bar).</summary>
+    public static StatusIndicatorStyle CurrentStatusIndicatorStyle { get; private set; } = StatusIndicatorStyle.Circle;
+
+    public static void SetStatusIndicatorStyle(StatusIndicatorStyle style)
+    {
+        CurrentStatusIndicatorStyle = style;
+    }
+
     public static bool IsColored(AppTheme t) => t == AppTheme.Colored;
 
     /// <summary>

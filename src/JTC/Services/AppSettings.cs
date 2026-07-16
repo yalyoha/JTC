@@ -197,4 +197,26 @@ public sealed record AppSettings
     // still appears with release notes. Missing on pre-v0.5.4 settings.json ⇒ default
     // true, so upgrading users get seamless updates from the next version onward.
     public bool AutoUpdateEnabled { get; init; } = true;
+
+    // v0.5.7+ — user-controlled corner rounding.
+    // ButtonCornerRadius: applies to toolbar buttons (0 = square, 20 = fully pill for
+    //   ~32-tall icon buttons). Default 16 matches the v0.5.6 baked value.
+    // PlashkaCornerRadius: applies to row Borders (0 = square, 22 = fully pill for
+    //   44-tall rows; values above 22 don't add extra roundness). Default 22 = pill.
+    public int ButtonCornerRadius { get; init; } = 16;
+    public int PlashkaCornerRadius { get; init; } = 22;
+
+    // v0.5.7+ — how the status indicator is drawn on each row. Circle (default) is
+    // an 8×8 dot inset from the left, matching the capsule plashka look. Stripe is
+    // the pre-v0.5.5 4 px vertical bar on the leftmost edge, better paired with a
+    // square (PlashkaCornerRadius=0) plashka.
+    public StatusIndicatorStyle StatusIndicatorStyle { get; init; } = StatusIndicatorStyle.Circle;
+}
+
+/// <summary>How the per-row status indicator renders — see AppSettings.StatusIndicatorStyle.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter))]
+public enum StatusIndicatorStyle
+{
+    Circle,
+    Stripe,
 }

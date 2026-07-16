@@ -42,6 +42,25 @@ public sealed partial class TorrentViewModel : ObservableObject
     [ObservableProperty] private Brush _rowBackground = new SolidColorBrush();
     [ObservableProperty] private Brush _statusBrush = new SolidColorBrush();
     [ObservableProperty] private Brush _rowForeground = new SolidColorBrush();
+    // Bound to the row's Border.CornerRadius via x:Bind so a settings-dialog change
+    // takes effect on every row without walking the visual tree. Default from
+    // ThemeHelper's current cached value so freshly-added torrents inherit whatever
+    // the user last picked.
+    [ObservableProperty] private Microsoft.UI.Xaml.CornerRadius _plashkaCornerRadius =
+        new Microsoft.UI.Xaml.CornerRadius(ThemeHelper.CurrentPlashkaCornerRadius);
+
+    // Toggles between the two status-indicator shapes on each row: Circle = 8×8 dot,
+    // Stripe = 4 px left-edge bar. XAML uses two elements with mutually-exclusive
+    // Visibility bindings, so only one is ever laid out at a time.
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatusCircleVisibility))]
+    [NotifyPropertyChangedFor(nameof(StatusStripeVisibility))]
+    private bool _statusAsCircle = ThemeHelper.CurrentStatusIndicatorStyle == JTC.Services.StatusIndicatorStyle.Circle;
+
+    public Microsoft.UI.Xaml.Visibility StatusCircleVisibility =>
+        StatusAsCircle ? Microsoft.UI.Xaml.Visibility.Visible : Microsoft.UI.Xaml.Visibility.Collapsed;
+    public Microsoft.UI.Xaml.Visibility StatusStripeVisibility =>
+        StatusAsCircle ? Microsoft.UI.Xaml.Visibility.Collapsed : Microsoft.UI.Xaml.Visibility.Visible;
 
     partial void OnIsSelectedChanged(bool value) => RebuildRowBackground();
     partial void OnProgressChanged(double value) => RebuildRowBackground();
