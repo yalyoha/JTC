@@ -135,7 +135,16 @@ public sealed partial class MainWindow : Window
             if (_snoozedVersion is not null && _snoozedVersion.Equals(info.Version)) return;
 
             _updateFlowInProgress = true;
-            try { await ShowUpdatePromptAsync(info); }
+            try
+            {
+                // Silent auto-update path (default in v0.5.4+): skip the "Обновить /
+                // Позже" prompt, go straight to download-with-progress + silent install.
+                // User only sees the download progress bar and the fresh JTC launching.
+                if (SettingsStore.Load().AutoUpdateEnabled)
+                    await DownloadAndRunInstallerAsync(info, silent: true);
+                else
+                    await ShowUpdatePromptAsync(info);
+            }
             finally { _updateFlowInProgress = false; }
         }
         catch (Exception ex) { DebugLog.Error("OnWindowActivated update check", ex); }
@@ -203,10 +212,10 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        await DownloadAndRunInstallerAsync(info);
+        await DownloadAndRunInstallerAsync(info, silent: false);
     }
 
-    private async Task DownloadAndRunInstallerAsync(UpdateInfo info)
+    private async Task DownloadAndRunInstallerAsync(UpdateInfo info, bool silent)
     {
         var status = new TextBlock { Text = "Скачивание установщика…" };
         var bar = new Microsoft.UI.Xaml.Controls.ProgressBar
@@ -257,7 +266,12 @@ public sealed partial class MainWindow : Window
             return;
         }
         // Hand off to the installer, then die so it can freely overwrite our files.
-        UpdateService.LaunchInstallerAndExit(path);
+        // Silent path uses /VERYSILENT and the installer's [Run] step relaunches JTC
+        // once the copy is done (skipifsilent was dropped in v0.5.4).
+        if (silent)
+            UpdateService.LaunchInstallerSilentAndExit(path);
+        else
+            UpdateService.LaunchInstallerAndExit(path);
     }
 
     private void OnAppWindowClosing(Microsoft.UI.Windowing.AppWindow sender,
@@ -1180,10 +1194,20 @@ public sealed partial class MainWindow : Window
         // stacked controls (max downloads, theme, and — when Colored — the whole colour
         // section). The dialog's built-in ContentScrollViewer (see ThemeHelper) provides
         // vertical scrolling if the list overflows a small main window.
+        // Auto-update opt-out. Default ON — silent download + silent install + relaunch
+        // when a newer GitHub release appears. OFF flips back to the classic prompt
+        // ("Обновить / Позже" with release notes).
+        var autoUpdateChk = new Microsoft.UI.Xaml.Controls.CheckBox
+        {
+            Content = "Обновлять автоматически (тихая установка в фоне)",
+            IsChecked = current.AutoUpdateEnabled,
+        };
+
         var outerPanel = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 16, MinWidth = 320 };
         outerPanel.Children.Add(pathRow);
         outerPanel.Children.Add(maxBox);
         outerPanel.Children.Add(themeBox);
+        outerPanel.Children.Add(autoUpdateChk);
         outerPanel.Children.Add(coloredSection);
 
         dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
@@ -1473,6 +1497,7 @@ public sealed partial class MainWindow : Window
             StatusHashingHex     = ThemeHelper.ToHex(workingStatusHashing),
             StatusErrorHex       = ThemeHelper.ToHex(workingStatusError),
             CustomPresets        = workingPresets,
+            AutoUpdateEnabled    = autoUpdateChk.IsChecked ?? true,
         };
         SettingsStore.Save(updated);
 

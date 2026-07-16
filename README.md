@@ -8,7 +8,7 @@
 </p>
 
 <p align="center">
-  <img src="screenshots/theme-colored-pink-orange.png" width="880" alt="Junior Torrent Client — окно приложения" />
+  <img src="screenshots/theme-preset-01-pink-orange.png" width="880" alt="Junior Torrent Client — окно приложения" />
 </p>
 
 ## Что умеет
@@ -30,34 +30,50 @@
 
 ## Галерея тем
 
-Все три темы (**Цветная**, **Чёрная**, **Белая**) переключаются в Настройках. Цветная — с полным контролем каждого цвета. Ниже — несколько сохранённых пресетов, но можно собрать любую свою.
+Три темы (**Цветная**, **Чёрная**, **Белая**) переключаются в Настройках. Цветная — с полным контролем каждого цвета (9 полей: градиент верх/низ + плашка фон/текст + пять статусов). В комплекте **10 встроенных пресетов**; можно собрать и сохранить любое своё сочетание.
 
-### Цветная тема
+### 10 встроенных пресетов Цветной темы
 
 <table>
 <tr>
-<td width="50%"><img src="screenshots/theme-colored-pink-orange.png" alt="Розово-оранжевая" /></td>
-<td width="50%"><img src="screenshots/theme-colored-blue-lime.png" alt="Сине-зелёная" /></td>
+<td width="50%"><img src="screenshots/theme-preset-01-pink-orange.png" alt="Розово-оранжевая" /></td>
+<td width="50%"><img src="screenshots/theme-preset-02-blue-lime.png" alt="Сине-зелёная" /></td>
 </tr>
 <tr>
-<td align="center"><b>Розово-оранжевая</b> (встроенный пресет)</td>
-<td align="center"><b>Сине-зелёная</b> (встроенный пресет)</td>
+<td align="center"><b>1. Розово-оранжевая</b></td>
+<td align="center"><b>2. Сине-зелёная</b></td>
 </tr>
 <tr>
-<td width="50%"><img src="screenshots/theme-colored-pink-orange-dark-plashka.png" alt="Розово-оранжевая + тёмные плашки" /></td>
-<td width="50%"><img src="screenshots/theme-colored-sunset-dark.png" alt="Закат: оранжевый → красный + тёмные плашки" /></td>
+<td width="50%"><img src="screenshots/theme-preset-03-sunset.png" alt="Закат" /></td>
+<td width="50%"><img src="screenshots/theme-preset-04-ocean.png" alt="Океан" /></td>
 </tr>
 <tr>
-<td align="center"><b>Розово-оранжевая</b> с <b>тёмными плашками</b></td>
-<td align="center"><b>Закат</b>: оранжевый → красный на тёмных плашках</td>
+<td align="center"><b>3. Закат</b></td>
+<td align="center"><b>4. Океан</b></td>
 </tr>
 <tr>
-<td width="50%"><img src="screenshots/theme-colored-purple-teal.png" alt="Фиолетовый → бирюзовый" /></td>
-<td width="50%"><img src="screenshots/theme-colored-mint-fresh.png" alt="Мятная" /></td>
+<td width="50%"><img src="screenshots/theme-preset-05-purple-dusk.png" alt="Фиолетовый мрак" /></td>
+<td width="50%"><img src="screenshots/theme-preset-06-mint.png" alt="Мятная свежесть" /></td>
 </tr>
 <tr>
-<td align="center"><b>Фиолетовый → бирюзовый</b> (кастомный)</td>
-<td align="center"><b>Мятная</b> (кастомный)</td>
+<td align="center"><b>5. Фиолетовый мрак</b></td>
+<td align="center"><b>6. Мятная свежесть</b></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/theme-preset-07-forest.png" alt="Лес" /></td>
+<td width="50%"><img src="screenshots/theme-preset-08-cyberpunk.png" alt="Киберпанк" /></td>
+</tr>
+<tr>
+<td align="center"><b>7. Лес</b></td>
+<td align="center"><b>8. Киберпанк</b></td>
+</tr>
+<tr>
+<td width="50%"><img src="screenshots/theme-preset-09-coffee.png" alt="Кофе" /></td>
+<td width="50%"><img src="screenshots/theme-preset-10-aurora.png" alt="Северное сияние" /></td>
+</tr>
+<tr>
+<td align="center"><b>9. Кофе</b></td>
+<td align="center"><b>10. Северное сияние</b></td>
 </tr>
 </table>
 

@@ -1,11 +1,11 @@
 ; Inno Setup script for Junior Torrent Client (JTC)
 ; Compile with: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\JTC.iss
-; Output: dist\JTC-v0.5.3-setup.exe
+; Output: dist\JTC-v0.5.4-setup.exe
 
 #define MyAppName "Junior Torrent Client"
 #define MyAppShortName "JTC"
 #define MyAppFolderName "JuniorTorrentClient"
-#define MyAppVersion "0.5.3"
+#define MyAppVersion "0.5.4"
 #define MyAppPublisher "yalyoha"
 #define MyAppURL "https://github.com/yalyoha/JTC"
 #define MyAppExeName "JTC.exe"
@@ -93,7 +93,12 @@ Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+; skipifsilent removed in v0.5.4 so /VERYSILENT installs (used by the in-app
+; auto-updater's "AutoUpdateEnabled" path) still relaunch JTC after the copy —
+; otherwise the silent update would tear down JTC and never bring it back.
+; Interactive installs still show the "Launch JTC" checkbox on the final page
+; thanks to the `postinstall` flag.
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall
 
 [UninstallDelete]
 ; Leave the app data (%LocalAppData%\JTC, and %LocalAppData%\TClient for old installs) alone

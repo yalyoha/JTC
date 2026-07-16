@@ -203,6 +203,33 @@ public static class UpdateService
         System.Threading.Thread.Sleep(300);
         Environment.Exit(0);
     }
+
+    /// <summary>
+    /// Silent-mode counterpart to LaunchInstallerAndExit — starts the installer
+    /// with <c>/VERYSILENT /SUPPRESSMSGBOXES /NORESTART</c> so no wizard UI shows,
+    /// then exits the current process immediately. The installer's [Run] entry
+    /// (without <c>skipifsilent</c>) launches JTC.exe again once the file copy
+    /// completes, so the user sees the app come back on its own.
+    /// </summary>
+    public static void LaunchInstallerSilentAndExit(string installerPath)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = installerPath,
+                Arguments = "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART",
+                UseShellExecute = true,
+            });
+        }
+        catch (Exception ex)
+        {
+            DebugLog.Error("UpdateService.LaunchInstallerSilentAndExit", ex);
+            return;
+        }
+        System.Threading.Thread.Sleep(300);
+        Environment.Exit(0);
+    }
 }
 
 public sealed record UpdateInfo

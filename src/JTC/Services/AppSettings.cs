@@ -66,10 +66,64 @@ public static class BuiltInColorPresets
     public const string BlueTopHex     = "#FF324166";
     public const string BlueBottomHex  = "#FF7AB317";
 
+    // Ten built-in themes, each a fully-specified colour set (gradient + plashka + all
+    // 5 status colours). Users can pick any and start with a coherent look; they can
+    // still tweak individual swatches after selection. All 10 stay listed at the top
+    // of the ComboBox and are non-editable / non-deletable (edit + delete apply only
+    // to user-saved presets appended below them).
     public static readonly IReadOnlyList<ColorPreset> All = new[]
     {
-        new ColorPreset { Name = PinkOrangeName, TopHex = PinkTopHex, BottomHex = PinkBottomHex },
-        new ColorPreset { Name = BlueLimeName,   TopHex = BlueTopHex, BottomHex = BlueBottomHex },
+        new ColorPreset { Name = PinkOrangeName,        TopHex = PinkTopHex,     BottomHex = PinkBottomHex,
+            PlashkaBgHex = "#FFFFFFFF", PlashkaFgHex = "#FF212121",
+            StatusIdleHex        = "#FF90A4AE", StatusDownloadingHex = "#FFFF9100",
+            StatusSeedingHex     = "#FF00E676", StatusHashingHex     = "#FF2979FF",
+            StatusErrorHex       = "#FFFF1744" },
+        new ColorPreset { Name = BlueLimeName,          TopHex = BlueTopHex,     BottomHex = BlueBottomHex,
+            PlashkaBgHex = "#FFFFFFFF", PlashkaFgHex = "#FF212121",
+            StatusIdleHex        = "#FF90A4AE", StatusDownloadingHex = "#FFFF9100",
+            StatusSeedingHex     = "#FF00E676", StatusHashingHex     = "#FF2979FF",
+            StatusErrorHex       = "#FFFF1744" },
+        // ---- 8 new themes (v0.5.4) ----
+        new ColorPreset { Name = "Закат",               TopHex = "#FFFF6F00",    BottomHex = "#FFB71C1C",
+            PlashkaBgHex = "#FF1E1E1E", PlashkaFgHex = "#FFFFEBCD",
+            StatusIdleHex        = "#FFBCAAA4", StatusDownloadingHex = "#FFFFAB40",
+            StatusSeedingHex     = "#FFFFEB3B", StatusHashingHex     = "#FFFF80AB",
+            StatusErrorHex       = "#FFFF1744" },
+        new ColorPreset { Name = "Океан",               TopHex = "#FF01579B",    BottomHex = "#FF00838F",
+            PlashkaBgHex = "#FFFFFFFF", PlashkaFgHex = "#FF212121",
+            StatusIdleHex        = "#FF90A4AE", StatusDownloadingHex = "#FF0091EA",
+            StatusSeedingHex     = "#FF00E5FF", StatusHashingHex     = "#FF00B8D4",
+            StatusErrorHex       = "#FFFF1744" },
+        new ColorPreset { Name = "Фиолетовый мрак",    TopHex = "#FF311B92",    BottomHex = "#FFAA00FF",
+            PlashkaBgHex = "#FF212121", PlashkaFgHex = "#FFF3E5F5",
+            StatusIdleHex        = "#FF9575CD", StatusDownloadingHex = "#FFE040FB",
+            StatusSeedingHex     = "#FF7C4DFF", StatusHashingHex     = "#FF651FFF",
+            StatusErrorHex       = "#FFFF3D00" },
+        new ColorPreset { Name = "Мятная свежесть",    TopHex = "#FF00897B",    BottomHex = "#FF80DEEA",
+            PlashkaBgHex = "#FFFAFAFA", PlashkaFgHex = "#FF1B1B1B",
+            StatusIdleHex        = "#FFB0BEC5", StatusDownloadingHex = "#FFFF6D00",
+            StatusSeedingHex     = "#FF64DD17", StatusHashingHex     = "#FF00B8D4",
+            StatusErrorHex       = "#FFD50000" },
+        new ColorPreset { Name = "Лес",                 TopHex = "#FF1B5E20",    BottomHex = "#FFC0CA33",
+            PlashkaBgHex = "#FFFAFAFA", PlashkaFgHex = "#FF212121",
+            StatusIdleHex        = "#FF8D6E63", StatusDownloadingHex = "#FFFFC107",
+            StatusSeedingHex     = "#FF43A047", StatusHashingHex     = "#FF00ACC1",
+            StatusErrorHex       = "#FFE53935" },
+        new ColorPreset { Name = "Киберпанк",          TopHex = "#FFE91E63",    BottomHex = "#FF00E5FF",
+            PlashkaBgHex = "#FF0F0F0F", PlashkaFgHex = "#FFEEFF41",
+            StatusIdleHex        = "#FF546E7A", StatusDownloadingHex = "#FFFF00E5",
+            StatusSeedingHex     = "#FF00FF88", StatusHashingHex     = "#FF00E5FF",
+            StatusErrorHex       = "#FFFF073F" },
+        new ColorPreset { Name = "Кофе",                TopHex = "#FF3E2723",    BottomHex = "#FFD7CCC8",
+            PlashkaBgHex = "#FFF5EDE0", PlashkaFgHex = "#FF3E2723",
+            StatusIdleHex        = "#FFA1887F", StatusDownloadingHex = "#FFFFB300",
+            StatusSeedingHex     = "#FF8BC34A", StatusHashingHex     = "#FF00838F",
+            StatusErrorHex       = "#FFBF360C" },
+        new ColorPreset { Name = "Северное сияние",   TopHex = "#FF1A237E",    BottomHex = "#FF00E676",
+            PlashkaBgHex = "#FF0D1B2A", PlashkaFgHex = "#FFE8EAF6",
+            StatusIdleHex        = "#FF7986CB", StatusDownloadingHex = "#FF00B0FF",
+            StatusSeedingHex     = "#FF69F0AE", StatusHashingHex     = "#FF7C4DFF",
+            StatusErrorHex       = "#FFFF5252" },
     };
 }
 
@@ -132,4 +186,11 @@ public sealed record AppSettings
     // are prepended in the settings dialog — they are not persisted here to avoid drift
     // if we ever tweak the defaults in a future release.
     public List<ColorPreset> CustomPresets { get; init; } = new();
+
+    // v0.5.4+ — when true (default), an available update is downloaded automatically,
+    // the installer is launched in /VERYSILENT mode, and JTC relaunches after the
+    // background install finishes. When false, the classic "Обновить / Позже" dialog
+    // still appears with release notes. Missing on pre-v0.5.4 settings.json ⇒ default
+    // true, so upgrading users get seamless updates from the next version onward.
+    public bool AutoUpdateEnabled { get; init; } = true;
 }
