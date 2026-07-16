@@ -123,6 +123,12 @@ public static class ThemeHelper
     // user's chosen top color instead of the stock lavender WinUI accent.
     public static void ApplyToDialog(ContentDialog dialog, AppTheme theme)
     {
+        // Idempotent: strip any prior Colored-scope overrides first so a live-preview
+        // theme switch (Colored → Dark → back to Colored, etc.) starts from a clean
+        // slate. Without this, resources set on the previous ApplyToDialog call linger
+        // and the new theme inherits stale gradient / accent brushes.
+        ClearColoredDialogOverrides(dialog);
+
         dialog.RequestedTheme = theme == AppTheme.Light ? ElementTheme.Light : ElementTheme.Dark;
 
         // Dialogs live on the XamlRoot popup surface, which does not inherit FontFamily
@@ -143,11 +149,15 @@ public static class ThemeHelper
         // Belt-and-braces: some template snapshots the ThemeResource lookup at
         // ApplyTemplate time and doesn't repaint on Resources changes — reach in
         // once the visual tree is materialized and set Foreground directly too.
-        dialog.Loaded += (_, _) =>
+        // RunNowOrOnLoad handles both the "dialog not yet loaded" (initial show) case
+        // AND the "dialog already loaded" case (live-preview theme change through
+        // the settings ComboBox) — plain dialog.Loaded += only fires once and would
+        // silently no-op on the second path.
+        RunNowOrOnLoad(dialog, () =>
         {
             if (FindDescendantByName(dialog, "PrimaryButton") is Control pb)
                 pb.Foreground = whiteBrush;
-        };
+        });
 
         if (!IsColored(theme))
             return;
@@ -243,14 +253,64 @@ public static class ThemeHelper
         dialog.Resources["ComboBoxItemForegroundSelectedPressed"]        = white;
         dialog.Resources["ComboBoxItemForegroundDisabled"]               = white;
 
-        // Kill CommandSpace's background AFTER the template applies. Loaded fires once
-        // per Show, so re-hook every ApplyToDialog call — safe: subscriptions leak with
-        // the dialog itself, which is discarded after ShowAsync completes.
-        dialog.Loaded += (_, _) =>
+        // Kill CommandSpace's background so the outer BackgroundElement's gradient is
+        // the ONLY paint layer — otherwise both regions render the same brush
+        // independently (RelativeToBoundingBox) and the button strip visibly restarts
+        // the gradient. RunNowOrOnLoad handles the same two cases as PrimaryButton
+        // above (initial show vs. live-preview switch back to Colored on an already-
+        // loaded dialog).
+        RunNowOrOnLoad(dialog, () =>
         {
-            var cs = FindDescendantByName(dialog, "CommandSpace");
-            if (cs is Panel csPanel) csPanel.Background = transparent;
-        };
+            if (FindDescendantByName(dialog, "CommandSpace") is Panel csPanel)
+                csPanel.Background = transparent;
+        });
+    }
+
+    private static void RunNowOrOnLoad(FrameworkElement el, Action action)
+    {
+        if (el.IsLoaded) action();
+        else el.Loaded += (_, _) => action();
+    }
+
+    // Resource keys that ApplyToDialog's Colored branch sets. Listed here so we can
+    // strip them all in one pass when re-applying for a different theme; keeping a
+    // constant list is fragile-looking but at least the alternative (per-key removal
+    // scattered through code) would drift out of sync silently. If ApplyToDialog adds
+    // a new resource, mirror it here.
+    private static readonly string[] ColoredDialogResourceKeys = new[]
+    {
+        "ContentDialogForeground", "ContentDialogBorderBrush",
+        "AccentButtonBackground", "AccentButtonBackgroundPointerOver", "AccentButtonBackgroundPressed",
+        "AccentButtonForeground", "AccentButtonForegroundPointerOver", "AccentButtonForegroundPressed",
+        "AccentButtonBorderBrush",
+        "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused", "TextControlBackgroundDisabled",
+        "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused", "TextControlForegroundDisabled",
+        "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused", "TextControlBorderBrushDisabled",
+        "ComboBoxBackground", "ComboBoxBackgroundPointerOver", "ComboBoxBackgroundPressed", "ComboBoxBackgroundFocused", "ComboBoxBackgroundUnfocused", "ComboBoxBackgroundDisabled",
+        "ComboBoxForeground", "ComboBoxForegroundPointerOver", "ComboBoxForegroundPressed", "ComboBoxForegroundFocused", "ComboBoxForegroundDisabled",
+        "ComboBoxBorderBrush", "ComboBoxBorderBrushPointerOver", "ComboBoxBorderBrushPressed", "ComboBoxBorderBrushFocused", "ComboBoxBorderBrushUnfocused", "ComboBoxBorderBrushDisabled",
+        "ComboBoxDropDownBackground", "ComboBoxDropDownBackgroundPointerOver", "ComboBoxDropDownBackgroundPointerPressed",
+        "ComboBoxDropDownForeground", "ComboBoxDropDownBorderBrush",
+        "ComboBoxItemBackground", "ComboBoxItemBackgroundPointerOver", "ComboBoxItemBackgroundPressed",
+        "ComboBoxItemBackgroundSelected", "ComboBoxItemBackgroundSelectedUnfocused", "ComboBoxItemBackgroundSelectedPointerOver", "ComboBoxItemBackgroundSelectedPressed",
+        "ComboBoxItemForeground", "ComboBoxItemForegroundPointerOver", "ComboBoxItemForegroundPressed",
+        "ComboBoxItemForegroundSelected", "ComboBoxItemForegroundSelectedUnfocused", "ComboBoxItemForegroundSelectedPointerOver", "ComboBoxItemForegroundSelectedPressed",
+        "ComboBoxItemForegroundDisabled",
+    };
+
+    private static void ClearColoredDialogOverrides(ContentDialog dialog)
+    {
+        foreach (var key in ColoredDialogResourceKeys)
+            dialog.Resources.Remove(key);
+        dialog.ClearValue(ContentDialog.BackgroundProperty);
+        dialog.ClearValue(ContentDialog.ForegroundProperty);
+        if (FindDescendantByName(dialog, "PrimaryButton") is Control pb)
+        {
+            pb.ClearValue(Control.BackgroundProperty);
+            pb.ClearValue(Control.ForegroundProperty);
+        }
+        if (FindDescendantByName(dialog, "CommandSpace") is Panel cs)
+            cs.ClearValue(Panel.BackgroundProperty);
     }
 
     private static FrameworkElement? FindDescendantByName(DependencyObject root, string name)

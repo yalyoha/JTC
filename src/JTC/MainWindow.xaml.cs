@@ -582,6 +582,10 @@ public sealed partial class MainWindow : Window
         // Forward-declared so ApplyLiveTheme can close over the dialog reference — the
         // dialog itself is constructed further down (needs all the child controls first).
         Microsoft.UI.Xaml.Controls.ContentDialog? dialog = null;
+        // Tracks which theme the dialog is currently styled with, so ApplyLiveTheme can
+        // pick the fast RepaintColoredDialog path (colour drag inside Colored) vs the
+        // full ApplyToDialog reset path (any theme switch).
+        var lastDialogTheme = current.Theme;
 
         // Current working colors — start from settings, fall back to the first built-in
         // preset if the stored hex is unparseable or missing (fresh install).
@@ -766,10 +770,21 @@ public sealed partial class MainWindow : Window
                 vm.RefreshBrushes();
                 vm.Refresh();
             }
-            // Keep the open settings dialog in sync so its surface + Save button don't
-            // stay frozen at the colours the dialog was originally shown with.
-            if (dialog is not null && theme == AppTheme.Colored)
-                ThemeHelper.RepaintColoredDialog(dialog, workingTop, workingBottom);
+            if (dialog is not null)
+            {
+                // Colour-only tweak (theme stayed Colored, only top/bottom hex shifted)
+                // uses the fast RepaintColoredDialog path so ColorPicker drag frames
+                // don't re-set 50+ resource keys per frame. Any theme *switch* goes
+                // through ApplyToDialog which clears prior Colored-scope overrides
+                // and applies the new theme's defaults — otherwise switching
+                // Colored → Dark left the dialog with a stale gradient background
+                // (screenshots/img_25 / img_26).
+                if (theme == AppTheme.Colored && lastDialogTheme == AppTheme.Colored)
+                    ThemeHelper.RepaintColoredDialog(dialog, workingTop, workingBottom);
+                else
+                    ThemeHelper.ApplyToDialog(dialog, theme);
+                lastDialogTheme = theme;
+            }
         }
 
         var topFlyout = MakeColorFlyout(workingTop, c =>
