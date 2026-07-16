@@ -7,8 +7,11 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Media;
 using MonoTorrent.Client;
+using Windows.UI;
 using JTC.Helpers;
 using JTC.Services;
 using JTC.ViewModels;
@@ -35,9 +38,13 @@ public sealed partial class MainWindow : Window
         ViewModel = new MainViewModel(service, DispatcherQueue);
 
         // Paint the window background + set element theme from the user's saved choice.
-        // No OS backdrop is needed underneath — the theme brush covers the whole grid.
-        var initialTheme = SettingsStore.Load().Theme;
-        ThemeHelper.Apply(RootGrid, initialTheme);
+        // For the Colored theme, restore the last-saved gradient endpoints too (fall back
+        // to first built-in preset if hex parsing fails or the fields are null).
+        var initialSettings = SettingsStore.Load();
+        var initialTheme = initialSettings.Theme;
+        var initialTop = ThemeHelper.TryParseHex(initialSettings.ColoredTopHex);
+        var initialBottom = ThemeHelper.TryParseHex(initialSettings.ColoredBottomHex);
+        ThemeHelper.Apply(RootGrid, initialTheme, initialTop, initialBottom);
 
         // Merge title bar into the client area so Acrylic reads through it.
         ExtendsContentIntoTitleBar = true;
@@ -565,6 +572,25 @@ public sealed partial class MainWindow : Window
     {
         var current = SettingsStore.Load();
 
+        // Snapshot the live state so we can revert on Cancel — the color-picker flyouts
+        // apply live-preview to the window and title bar as the user drags, so we need
+        // a way back to "exactly what was on screen before the dialog opened".
+        var snapshotTheme  = ThemeHelper.CurrentTheme;
+        var snapshotTop    = ThemeHelper.CurrentTop;
+        var snapshotBottom = ThemeHelper.CurrentBottom;
+
+        // Forward-declared so ApplyLiveTheme can close over the dialog reference — the
+        // dialog itself is constructed further down (needs all the child controls first).
+        Microsoft.UI.Xaml.Controls.ContentDialog? dialog = null;
+
+        // Current working colors — start from settings, fall back to the first built-in
+        // preset if the stored hex is unparseable or missing (fresh install).
+        var workingTop = ThemeHelper.TryParseHex(current.ColoredTopHex)
+                         ?? ThemeHelper.TryParseHex(BuiltInColorPresets.PinkTopHex)!.Value;
+        var workingBottom = ThemeHelper.TryParseHex(current.ColoredBottomHex)
+                            ?? ThemeHelper.TryParseHex(BuiltInColorPresets.PinkBottomHex)!.Value;
+
+        // ---- LEFT column: existing settings ---------------------------------------
         var pathBox = new Microsoft.UI.Xaml.Controls.TextBox
         {
             Header = "Папка загрузок",
@@ -605,75 +631,373 @@ public sealed partial class MainWindow : Window
             HorizontalAlignment = HorizontalAlignment.Left,
         };
 
-        // Theme picker — indices match ItemsSource order below.
+        // Theme picker — indices match themeItems below.
+        var themeItems = new[]
+        {
+            (Label: "Цветная", Theme: AppTheme.Colored),
+            (Label: "Чёрная",  Theme: AppTheme.Dark),
+            (Label: "Белая",   Theme: AppTheme.Light),
+        };
         var themeBox = new Microsoft.UI.Xaml.Controls.ComboBox
         {
             Header = "Тема",
             Width = 200,
             HorizontalAlignment = HorizontalAlignment.Left,
         };
-        themeBox.Items.Add("Фирменная 1");
-        themeBox.Items.Add("Фирменная 2");
-        themeBox.Items.Add("Чёрная");
-        themeBox.Items.Add("Белая");
-        themeBox.SelectedIndex = current.Theme switch
+        foreach (var t in themeItems) themeBox.Items.Add(t.Label);
+        themeBox.SelectedIndex = System.Array.FindIndex(themeItems, t => t.Theme == current.Theme);
+        if (themeBox.SelectedIndex < 0) themeBox.SelectedIndex = 0;
+
+        // Path row is promoted to the full-width top of the dialog (see outerPanel below);
+        // the left column keeps just the two narrow controls under it.
+        var leftCol = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 16, MinWidth = 260 };
+        leftCol.Children.Add(maxBox);
+        leftCol.Children.Add(themeBox);
+
+        // ---- RIGHT column: color pickers + presets (only when Colored) ------------
+        // Working copy of the preset list so Save-as-preset / Delete stay local until
+        // the user hits Сохранить at the dialog level.
+        var workingPresets = new List<ColorPreset>(current.CustomPresets);
+
+        var presetBox = new Microsoft.UI.Xaml.Controls.ComboBox
         {
-            AppTheme.Brand2 => 1,
-            AppTheme.Dark   => 2,
-            AppTheme.Light  => 3,
-            _               => 0,
+            Header = "Пресет",
+            Width = 220,
+            HorizontalAlignment = HorizontalAlignment.Left,
         };
 
-        var panel = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 16, MinWidth = 420 };
-        panel.Children.Add(pathRow);
-        panel.Children.Add(maxBox);
-        panel.Children.Add(themeBox);
+        void RebuildPresetItems(int? selectIndex = null)
+        {
+            var selectedName = presetBox.SelectedItem as string;
+            presetBox.Items.Clear();
+            foreach (var p in BuiltInColorPresets.All) presetBox.Items.Add(p.Name);
+            foreach (var p in workingPresets)          presetBox.Items.Add(p.Name);
+            if (selectIndex is int idx && idx >= 0 && idx < presetBox.Items.Count)
+                presetBox.SelectedIndex = idx;
+            else if (selectedName is not null)
+            {
+                for (int i = 0; i < presetBox.Items.Count; i++)
+                    if ((string)presetBox.Items[i] == selectedName) { presetBox.SelectedIndex = i; break; }
+            }
+        }
 
-        var dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
+        ColorPreset? PresetAt(int i)
+        {
+            if (i < 0) return null;
+            if (i < BuiltInColorPresets.All.Count) return BuiltInColorPresets.All[i];
+            var j = i - BuiltInColorPresets.All.Count;
+            return (j >= 0 && j < workingPresets.Count) ? workingPresets[j] : null;
+        }
+
+        bool IsBuiltInIndex(int i) => i >= 0 && i < BuiltInColorPresets.All.Count;
+
+        int FindPresetIndexMatchingColors(Color top, Color bottom)
+        {
+            var topHex    = ThemeHelper.ToHex(top);
+            var bottomHex = ThemeHelper.ToHex(bottom);
+            for (int i = 0; i < BuiltInColorPresets.All.Count; i++)
+            {
+                var p = BuiltInColorPresets.All[i];
+                if (string.Equals(p.TopHex, topHex, System.StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(p.BottomHex, bottomHex, System.StringComparison.OrdinalIgnoreCase))
+                    return i;
+            }
+            for (int j = 0; j < workingPresets.Count; j++)
+            {
+                var p = workingPresets[j];
+                if (string.Equals(p.TopHex, topHex, System.StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(p.BottomHex, bottomHex, System.StringComparison.OrdinalIgnoreCase))
+                    return BuiltInColorPresets.All.Count + j;
+            }
+            return -1;
+        }
+
+        // Color swatches — small colored rectangles that pop a WinUI ColorPicker on click.
+        // Kept as Border rather than Button because Button carries the default WinUI hover
+        // overlay (a translucent grey lift) which reads as visual noise on a pure-colour
+        // sample — the swatch should look identical whether the pointer is over it or not.
+        Border MakeSwatchBorder(Color initial)
+        {
+            return new Border
+            {
+                Width = 48,
+                Height = 28,
+                Background = new SolidColorBrush(initial),
+                BorderBrush = new SolidColorBrush(Color.FromArgb(0x66, 0xFF, 0xFF, 0xFF)),
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(2),
+            };
+        }
+
+        var topSwatch    = MakeSwatchBorder(workingTop);
+        var bottomSwatch = MakeSwatchBorder(workingBottom);
+
+        Microsoft.UI.Xaml.Controls.Flyout MakeColorFlyout(Color initial, System.Action<Color> onChanged)
+        {
+            var picker = new Microsoft.UI.Xaml.Controls.ColorPicker
+            {
+                Color = initial,
+                IsAlphaEnabled = false,
+                IsAlphaSliderVisible = false,
+                IsAlphaTextInputVisible = false,
+                IsHexInputVisible = true,
+                IsColorChannelTextInputVisible = false,
+                IsMoreButtonVisible = false,
+                IsColorPreviewVisible = true,
+                IsColorSliderVisible = true,
+                ColorSpectrumShape = Microsoft.UI.Xaml.Controls.ColorSpectrumShape.Box,
+            };
+            picker.ColorChanged += (_, args) => onChanged(args.NewColor);
+            return new Microsoft.UI.Xaml.Controls.Flyout
+            {
+                Content = picker,
+                Placement = Microsoft.UI.Xaml.Controls.Primitives.FlyoutPlacementMode.Bottom,
+            };
+        }
+
+        void ApplyLiveTheme()
+        {
+            var themeIdx = System.Math.Max(0, themeBox.SelectedIndex);
+            var theme = themeItems[themeIdx].Theme;
+            ThemeHelper.Apply(RootGrid, theme, workingTop, workingBottom);
+            ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, theme);
+            foreach (var vm in ViewModel.Torrents)
+            {
+                vm.RefreshBrushes();
+                vm.Refresh();
+            }
+            // Keep the open settings dialog in sync so its surface + Save button don't
+            // stay frozen at the colours the dialog was originally shown with.
+            if (dialog is not null && theme == AppTheme.Colored)
+                ThemeHelper.RepaintColoredDialog(dialog, workingTop, workingBottom);
+        }
+
+        var topFlyout = MakeColorFlyout(workingTop, c =>
+        {
+            workingTop = c;
+            topSwatch.Background = new SolidColorBrush(c);
+            // Manual color pick means the preset selection may no longer match.
+            var match = FindPresetIndexMatchingColors(workingTop, workingBottom);
+            presetBox.SelectedIndex = match;
+            ApplyLiveTheme();
+        });
+        FlyoutBase.SetAttachedFlyout(topSwatch, topFlyout);
+        topSwatch.Tapped += (_, _) => FlyoutBase.ShowAttachedFlyout(topSwatch);
+
+        var bottomFlyout = MakeColorFlyout(workingBottom, c =>
+        {
+            workingBottom = c;
+            bottomSwatch.Background = new SolidColorBrush(c);
+            var match = FindPresetIndexMatchingColors(workingTop, workingBottom);
+            presetBox.SelectedIndex = match;
+            ApplyLiveTheme();
+        });
+        FlyoutBase.SetAttachedFlyout(bottomSwatch, bottomFlyout);
+        bottomSwatch.Tapped += (_, _) => FlyoutBase.ShowAttachedFlyout(bottomSwatch);
+
+        // Rows for the two swatches — [Label] [Swatch]. Kept as narrow grids so both
+        // rows align visually.
+        Microsoft.UI.Xaml.Controls.Grid MakeSwatchRow(string label, FrameworkElement swatch)
+        {
+            var g = new Microsoft.UI.Xaml.Controls.Grid { ColumnSpacing = 12 };
+            g.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            g.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = GridLength.Auto });
+            var tb = new TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center };
+            Microsoft.UI.Xaml.Controls.Grid.SetColumn(tb, 0);
+            Microsoft.UI.Xaml.Controls.Grid.SetColumn(swatch, 1);
+            g.Children.Add(tb);
+            g.Children.Add(swatch);
+            return g;
+        }
+
+        var savePresetBtn = new Microsoft.UI.Xaml.Controls.Button { Content = "Сохранить пресет…" };
+        var deletePresetBtn = new Microsoft.UI.Xaml.Controls.Button { Content = "Удалить пресет" };
+        var presetActionsRow = new Microsoft.UI.Xaml.Controls.StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            Spacing = 8,
+        };
+        presetActionsRow.Children.Add(savePresetBtn);
+        presetActionsRow.Children.Add(deletePresetBtn);
+
+        var rightCol = new Microsoft.UI.Xaml.Controls.StackPanel
+        {
+            Spacing = 12,
+            MinWidth = 240,
+            Margin = new Thickness(24, 0, 0, 0),
+        };
+        rightCol.Children.Add(presetBox);
+        rightCol.Children.Add(MakeSwatchRow("Верхний цвет", topSwatch));
+        rightCol.Children.Add(MakeSwatchRow("Нижний цвет",  bottomSwatch));
+        rightCol.Children.Add(presetActionsRow);
+
+        // Initial preset selection: try to match current colors to a preset.
+        RebuildPresetItems();
+        presetBox.SelectedIndex = FindPresetIndexMatchingColors(workingTop, workingBottom);
+        deletePresetBtn.IsEnabled = presetBox.SelectedIndex >= 0 && !IsBuiltInIndex(presetBox.SelectedIndex);
+
+        presetBox.SelectionChanged += (_, _) =>
+        {
+            var p = PresetAt(presetBox.SelectedIndex);
+            if (p is not null)
+            {
+                var top    = ThemeHelper.TryParseHex(p.TopHex);
+                var bottom = ThemeHelper.TryParseHex(p.BottomHex);
+                if (top is not null && bottom is not null)
+                {
+                    workingTop = top.Value;
+                    workingBottom = bottom.Value;
+                    topSwatch.Background = new SolidColorBrush(workingTop);
+                    bottomSwatch.Background = new SolidColorBrush(workingBottom);
+                    ApplyLiveTheme();
+                }
+            }
+            deletePresetBtn.IsEnabled = presetBox.SelectedIndex >= 0 && !IsBuiltInIndex(presetBox.SelectedIndex);
+        };
+
+        // Right column is only relevant for Colored — hide entirely for Dark / Light and
+        // toggle live-preview to the new theme every time the picker changes.
+        void UpdateRightColumnVisibility()
+        {
+            var themeIdx = System.Math.Max(0, themeBox.SelectedIndex);
+            rightCol.Visibility = themeItems[themeIdx].Theme == AppTheme.Colored
+                ? Visibility.Visible
+                : Visibility.Collapsed;
+        }
+        UpdateRightColumnVisibility();
+        themeBox.SelectionChanged += (_, _) =>
+        {
+            UpdateRightColumnVisibility();
+            ApplyLiveTheme();
+        };
+
+        // Bottom-half two-column grid: [maxBox+themeBox] | [presets + swatches].
+        // Auto column widths so each column takes exactly as much space as it needs; the
+        // outer StackPanel then centres the whole strip under the full-width path row.
+        var bottomGrid = new Microsoft.UI.Xaml.Controls.Grid();
+        bottomGrid.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = GridLength.Auto });
+        bottomGrid.ColumnDefinitions.Add(new Microsoft.UI.Xaml.Controls.ColumnDefinition { Width = GridLength.Auto });
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(leftCol, 0);
+        Microsoft.UI.Xaml.Controls.Grid.SetColumn(rightCol, 1);
+        bottomGrid.Children.Add(leftCol);
+        bottomGrid.Children.Add(rightCol);
+
+        // Outer StackPanel: path row on top (full width thanks to StackPanel's default
+        // horizontal-stretch), everything else stacked below in the two-column bottomGrid.
+        var outerPanel = new Microsoft.UI.Xaml.Controls.StackPanel { Spacing = 16 };
+        outerPanel.Children.Add(pathRow);
+        outerPanel.Children.Add(bottomGrid);
+
+        dialog = new Microsoft.UI.Xaml.Controls.ContentDialog
         {
             Title = "Настройки",
-            Content = panel,
+            Content = outerPanel,
             PrimaryButtonText = "Сохранить",
             CloseButtonText = "Отмена",
             DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Primary,
             XamlRoot = Content.XamlRoot,
         };
+        // ContentDialog's default MaxWidth (theme resource, ~548 dip) is too narrow for the
+        // two-column layout — the right column with presets/swatches gets clipped. Push it up
+        // to 900 dip so both columns fit comfortably; the dialog auto-shrinks if the content
+        // is smaller (Dark/Light theme collapses the right column).
+        dialog.Resources["ContentDialogMaxWidth"] = 900.0;
         ThemeHelper.ApplyToDialog(dialog, ThemeHelper.CurrentTheme);
+
+        // Save-as-preset: nested ContentDialog for the name, then append and select it.
+        savePresetBtn.Click += async (_, _) =>
+        {
+            var nameBox = new Microsoft.UI.Xaml.Controls.TextBox
+            {
+                Header = "Название пресета",
+                PlaceholderText = "например, Закат",
+                MinWidth = 260,
+            };
+            var nameDialog = new Microsoft.UI.Xaml.Controls.ContentDialog
+            {
+                Title = "Сохранить пресет",
+                Content = nameBox,
+                PrimaryButtonText = "Сохранить",
+                CloseButtonText = "Отмена",
+                DefaultButton = Microsoft.UI.Xaml.Controls.ContentDialogButton.Primary,
+                XamlRoot = Content.XamlRoot,
+            };
+            ThemeHelper.ApplyToDialog(nameDialog, ThemeHelper.CurrentTheme);
+            var nameResult = await nameDialog.ShowAsync();
+            if (nameResult != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary) return;
+
+            var name = nameBox.Text?.Trim();
+            if (string.IsNullOrEmpty(name)) return;
+
+            // Reject duplicate names (case-insensitive) so the ComboBox doesn't grow two
+            // entries with the same label — user has to pick a different name or delete
+            // the existing one first.
+            bool duplicate = BuiltInColorPresets.All.Any(p => string.Equals(p.Name, name, System.StringComparison.OrdinalIgnoreCase))
+                          || workingPresets.Any(p => string.Equals(p.Name, name, System.StringComparison.OrdinalIgnoreCase));
+            if (duplicate)
+            {
+                await ShowErrorAsync("Пресет уже существует", $"Пресет с именем «{name}» уже есть. Выберите другое имя.");
+                return;
+            }
+
+            workingPresets.Add(new ColorPreset
+            {
+                Name = name,
+                TopHex = ThemeHelper.ToHex(workingTop),
+                BottomHex = ThemeHelper.ToHex(workingBottom),
+            });
+            RebuildPresetItems(BuiltInColorPresets.All.Count + workingPresets.Count - 1);
+        };
+
+        deletePresetBtn.Click += (_, _) =>
+        {
+            var i = presetBox.SelectedIndex;
+            if (i < 0 || IsBuiltInIndex(i)) return;
+            var j = i - BuiltInColorPresets.All.Count;
+            workingPresets.RemoveAt(j);
+            RebuildPresetItems();
+            presetBox.SelectedIndex = FindPresetIndexMatchingColors(workingTop, workingBottom);
+        };
+
         var res = await dialog.ShowAsync();
-        if (res != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary) return;
+        if (res != Microsoft.UI.Xaml.Controls.ContentDialogResult.Primary)
+        {
+            // Revert live-preview changes: restore snapshot theme + colors.
+            ThemeHelper.Apply(RootGrid, snapshotTheme, snapshotTop, snapshotBottom);
+            ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, snapshotTheme);
+            foreach (var vm in ViewModel.Torrents)
+            {
+                vm.RefreshBrushes();
+                vm.Refresh();
+            }
+            return;
+        }
 
         var newDir = pathBox.Text?.Trim();
         var newMax = (int)Math.Round(maxBox.Value);
         if (newMax < 1) newMax = 1;
-        var newTheme = themeBox.SelectedIndex switch
-        {
-            1 => AppTheme.Brand2,
-            2 => AppTheme.Dark,
-            3 => AppTheme.Light,
-            _ => AppTheme.Brand,
-        };
+        var newTheme = themeItems[System.Math.Max(0, themeBox.SelectedIndex)].Theme;
 
         var updated = current with
         {
             LastDownloadDir = string.IsNullOrEmpty(newDir) ? null : newDir,
             MaxSimultaneousDownloads = newMax,
             Theme = newTheme,
+            ColoredTopHex    = ThemeHelper.ToHex(workingTop),
+            ColoredBottomHex = ThemeHelper.ToHex(workingBottom),
+            CustomPresets    = workingPresets,
         };
         SettingsStore.Save(updated);
 
-        if (updated.Theme != current.Theme)
+        // Ensure the window matches saved state — live preview already applied it while
+        // the dialog was open, but re-apply here so a "Save without visiting any picker"
+        // path still commits correctly (theme changed via combobox, colors unchanged).
+        ThemeHelper.Apply(RootGrid, updated.Theme, workingTop, workingBottom);
+        ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, updated.Theme);
+        foreach (var vm in ViewModel.Torrents)
         {
-            ThemeHelper.Apply(RootGrid, updated.Theme);
-            ThemeHelper.ApplyToTitleBar(AppWindow.TitleBar, updated.Theme);
-            // Cached row brushes belong to the old palette — RefreshBrushes forces every
-            // VM to re-read RowBrushes.Current for its background, status stripe, and
-            // foreground even when its Display state hasn't changed (ApplyDisplay's own
-            // rebuild is state-change-gated, which would otherwise skip a pure theme swap).
-            foreach (var vm in ViewModel.Torrents)
-            {
-                vm.RefreshBrushes();
-                vm.Refresh();
-            }
+            vm.RefreshBrushes();
+            vm.Refresh();
         }
 
         try

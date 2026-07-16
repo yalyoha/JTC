@@ -1,11 +1,11 @@
 ; Inno Setup script for Junior Torrent Client (JTC)
 ; Compile with: "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\JTC.iss
-; Output: dist\JTC-v0.3.36-setup.exe
+; Output: dist\JTC-v0.4.0-setup.exe
 
 #define MyAppName "Junior Torrent Client"
 #define MyAppShortName "JTC"
 #define MyAppFolderName "JuniorTorrentClient"
-#define MyAppVersion "0.3.36"
+#define MyAppVersion "0.4.0"
 #define MyAppPublisher "yalyoha"
 #define MyAppURL "https://github.com/yalyoha/JTC"
 #define MyAppExeName "JTC.exe"
@@ -60,6 +60,16 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+
+[InstallDelete]
+; Wipe the entire {app} directory before copying the new build. Without this the
+; installer only OVERWRITES files with matching names — any DLL / .mui / resources.pri
+; from the previous version that isn't shipped in the new build sticks around, and
+; the running exe may load stale bits (users reported "old version still comes up
+; after reinstall"). All user data lives in %LocalAppData%\JTC (settings.json,
+; torrents.json, debug.log, inbox\, cache\), which is a separate directory — this
+; sweep is limited to {app} and does not touch downloads or torrent state.
+Type: filesandordirs; Name: "{app}\*"
 
 [Files]
 ; The whole publish folder — 400+ WinAppSDK / MonoTorrent / .NET DLLs.

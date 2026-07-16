@@ -131,13 +131,18 @@
                             <ColumnDefinition Width="60" />
                             <ColumnDefinition Width="120" />
                         </Grid.ColumnDefinitions>
+                        <!-- Имя — left-aligned (long text with ellipsis). Размер / Прогресс /
+                             Пиры / Состояние — centred so short values (numbers, percentages,
+                             short state labels) sit tidily in their column instead of hugging
+                             the left edge. Rate columns (↓ / ↑) stay left because their unit
+                             changes width (B/s → KB/s → MB/s) and centring would jitter. -->
                         <TextBlock Grid.Column="0" Text="Имя"       Style="{ThemeResource CaptionTextBlockStyle}" />
-                        <TextBlock Grid.Column="1" Text="Размер"    Style="{ThemeResource CaptionTextBlockStyle}" />
-                        <TextBlock Grid.Column="2" Text="Прогресс"  Style="{ThemeResource CaptionTextBlockStyle}" />
+                        <TextBlock Grid.Column="1" Text="Размер"    Style="{ThemeResource CaptionTextBlockStyle}" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="Прогресс"  Style="{ThemeResource CaptionTextBlockStyle}" HorizontalAlignment="Center" />
                         <TextBlock Grid.Column="3" Text="↓"         Style="{ThemeResource CaptionTextBlockStyle}" />
                         <TextBlock Grid.Column="4" Text="↑"         Style="{ThemeResource CaptionTextBlockStyle}" />
-                        <TextBlock Grid.Column="5" Text="Пиры"      Style="{ThemeResource CaptionTextBlockStyle}" />
-                        <TextBlock Grid.Column="6" Text="Состояние" Style="{ThemeResource CaptionTextBlockStyle}" />
+                        <TextBlock Grid.Column="5" Text="Пиры"      Style="{ThemeResource CaptionTextBlockStyle}" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="6" Text="Состояние" Style="{ThemeResource CaptionTextBlockStyle}" HorizontalAlignment="Center" />
                     </Grid>
                 </DataTemplate>
             </ListView.HeaderTemplate>
@@ -189,10 +194,10 @@
                                 <TextBlock Grid.Column="0" VerticalAlignment="Center"
                                            Foreground="{x:Bind RowForeground, Mode=OneWay}"
                                            Text="{x:Bind Name, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
-                                <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                                <TextBlock Grid.Column="1" VerticalAlignment="Center" HorizontalAlignment="Center"
                                            Foreground="{x:Bind RowForeground, Mode=OneWay}"
                                            Text="{x:Bind SizeText, Mode=OneWay}" />
-                                <TextBlock Grid.Column="2" VerticalAlignment="Center"
+                                <TextBlock Grid.Column="2" VerticalAlignment="Center" HorizontalAlignment="Center"
                                            Foreground="{x:Bind RowForeground, Mode=OneWay}"
                                            Text="{x:Bind ProgressText, Mode=OneWay}" />
                                 <TextBlock Grid.Column="3" VerticalAlignment="Center"
@@ -201,10 +206,10 @@
                                 <TextBlock Grid.Column="4" VerticalAlignment="Center"
                                            Foreground="{x:Bind RowForeground, Mode=OneWay}"
                                            Text="{x:Bind UploadRateText, Mode=OneWay}" />
-                                <TextBlock Grid.Column="5" VerticalAlignment="Center"
+                                <TextBlock Grid.Column="5" VerticalAlignment="Center" HorizontalAlignment="Center"
                                            Foreground="{x:Bind RowForeground, Mode=OneWay}"
                                            Text="{x:Bind PeerCount, Mode=OneWay}" />
-                                <TextBlock Grid.Column="6" VerticalAlignment="Center"
+                                <TextBlock Grid.Column="6" VerticalAlignment="Center" HorizontalAlignment="Center"
                                            Foreground="{x:Bind RowForeground, Mode=OneWay}"
                                            Text="{x:Bind StateText, Mode=OneWay}" />
                             </Grid>

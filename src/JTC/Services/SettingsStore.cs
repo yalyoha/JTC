@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace JTC.Services;
 
@@ -19,12 +20,58 @@ public static class SettingsStore
         {
             if (!File.Exists(FilePath))
                 return new AppSettings();
-            using var stream = File.OpenRead(FilePath);
-            return JsonSerializer.Deserialize<AppSettings>(stream, Options) ?? new AppSettings();
+            var text = File.ReadAllText(FilePath);
+            text = MigrateLegacyBrandTheme(text);
+            return JsonSerializer.Deserialize<AppSettings>(text, Options) ?? new AppSettings();
         }
         catch
         {
             return new AppSettings();
+        }
+    }
+
+    /// <summary>
+    /// Rewrites legacy <c>Theme: Brand</c> / <c>Theme: Brand2</c> JSON values (from builds
+    /// before the Colored theme collapsed the two branded themes into one) into
+    /// <c>Theme: Colored</c> with the matching preset colors preserved. Preserves the
+    /// user's brand choice across the upgrade — a Brand2 user keeps blue → lime, not
+    /// the default pink → orange.
+    /// </summary>
+    private static string MigrateLegacyBrandTheme(string json)
+    {
+        try
+        {
+            if (JsonNode.Parse(json) is not JsonObject obj) return json;
+            var themeVal = obj["Theme"]?.GetValue<string>();
+            if (themeVal is null) return json;
+            // Newer builds already write ColoredTopHex — nothing to migrate.
+            if (obj.ContainsKey("ColoredTopHex")) return json;
+
+            string? topHex, bottomHex;
+            if (string.Equals(themeVal, "Brand", System.StringComparison.OrdinalIgnoreCase))
+            {
+                topHex    = BuiltInColorPresets.PinkTopHex;
+                bottomHex = BuiltInColorPresets.PinkBottomHex;
+            }
+            else if (string.Equals(themeVal, "Brand2", System.StringComparison.OrdinalIgnoreCase))
+            {
+                topHex    = BuiltInColorPresets.BlueTopHex;
+                bottomHex = BuiltInColorPresets.BlueBottomHex;
+            }
+            else
+            {
+                return json;
+            }
+
+            obj["Theme"]            = "Colored";
+            obj["ColoredTopHex"]    = topHex;
+            obj["ColoredBottomHex"] = bottomHex;
+            return obj.ToJsonString(Options);
+        }
+        catch
+        {
+            // Bad JSON — let the outer Deserialize catch handle it and return defaults.
+            return json;
         }
     }
 
