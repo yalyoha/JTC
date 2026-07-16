@@ -104,7 +104,7 @@
                     <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                     <Setter Property="HorizontalAlignment" Value="Stretch" />
                     <Setter Property="Padding" Value="0" />
-                    <Setter Property="Margin" Value="0,0,0,3" />
+                    <Setter Property="Margin" Value="0,0,0,6" />
                 </Style>
             </ListView.ItemContainerStyle>
             <ListView.Resources>
@@ -148,10 +148,15 @@
             </ListView.HeaderTemplate>
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="vm:TorrentViewModel">
-                    <!-- Border wraps the row so its CornerRadius clips both the plashka background
-                         (RowBackground gradient) AND the 4px status stripe on the left edge; a
-                         plain Grid.CornerRadius would only clip its own background, not children. -->
-                    <Border CornerRadius="4"
+                    <!-- Capsule/pill row — aqua-glass look. CornerRadius large enough (22 for
+                         our ~44-tall plashka) that the ends become full semicircles. Border
+                         also clips the two overlay Rectangles below so their gloss / shadow
+                         gradients curve with the pill outline. Faint 1 px black border adds
+                         subtle edge definition on both light and dark plashka colours. -->
+                    <Border CornerRadius="22"
+                            Height="44"
+                            BorderThickness="1"
+                            BorderBrush="#22000000"
                             Background="{x:Bind RowBackground, Mode=OneWay}"
                             DoubleTapped="TorrentRow_DoubleTapped">
                         <Border.ContextFlyout>
@@ -175,13 +180,36 @@
                             </MenuFlyout>
                         </Border.ContextFlyout>
                         <Grid>
-                            <!-- 4px status stripe on the left edge; visible only outside the
-                                 rounded corners because the parent Border clips it. -->
-                            <Rectangle HorizontalAlignment="Left"
-                                       VerticalAlignment="Stretch"
-                                       Width="4"
-                                       Fill="{x:Bind StatusBrush, Mode=OneWay}" />
-                            <Grid Padding="12,10,12,10">
+                            <!-- Status "drop" — small ellipse on the left, replaces the old 4 px
+                                 stripe that got mostly clipped by the pill's rounded ends. -->
+                            <Ellipse HorizontalAlignment="Left" VerticalAlignment="Center"
+                                     Width="8" Height="8" Margin="14,0,0,0"
+                                     Fill="{x:Bind StatusBrush, Mode=OneWay}"
+                                     IsHitTestVisible="False" />
+                            <!-- Top gloss — semi-transparent white gradient covering the upper
+                                 half, giving that classic aqua "gel" highlight. Works over any
+                                 plashka colour: on white it's nearly invisible (subtle sheen);
+                                 on dark or coloured it lifts the top like glass. -->
+                            <Rectangle VerticalAlignment="Top" Height="22" IsHitTestVisible="False">
+                                <Rectangle.Fill>
+                                    <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
+                                        <GradientStop Color="#33FFFFFF" Offset="0" />
+                                        <GradientStop Color="#00FFFFFF" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Rectangle.Fill>
+                            </Rectangle>
+                            <!-- Bottom shadow — matching darkening on the lower half, so a
+                                 light plashka still reads as 3-D (top brighter, bottom darker).
+                                 Barely visible on dark plashkas by design. -->
+                            <Rectangle VerticalAlignment="Bottom" Height="18" IsHitTestVisible="False">
+                                <Rectangle.Fill>
+                                    <LinearGradientBrush StartPoint="0.5,0" EndPoint="0.5,1">
+                                        <GradientStop Color="#00000000" Offset="0" />
+                                        <GradientStop Color="#20000000" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Rectangle.Fill>
+                            </Rectangle>
+                            <Grid Padding="30,0,20,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="2.5*" />
                                     <ColumnDefinition Width="80" />
