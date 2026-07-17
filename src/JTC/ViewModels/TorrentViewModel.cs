@@ -22,7 +22,7 @@ public sealed partial class TorrentViewModel : ObservableObject
     // with a live rate is the only "actively pulling bytes" state. Hashing is broken out
     // separately so the user can see rechecks in progress after "Обновить" — otherwise a
     // multi-minute hash check just shows as "Ожидание" and looks stuck.
-    private enum Display { Waiting, Downloading, Seeding, Error, Hashing }
+    private enum Display { Waiting, Downloading, Seeding, Error, Hashing, Paused }
 
     private readonly DispatcherQueue _dispatcher;
     private Display _current = Display.Waiting;
@@ -37,6 +37,10 @@ public sealed partial class TorrentViewModel : ObservableObject
     [ObservableProperty] private string _uploadRateText = "—";
     [ObservableProperty] private int _peerCount;
     [ObservableProperty] private string _stateText = "Ожидание";
+    // Segoe MDL2 Assets glyph for the row's «Состояние» column. Mirrors StateText through
+    // the same ApplyDisplay switch so the two are always in sync. Default is Hourglass
+    // (U+E823) to match the "Ожидание" default StateText.
+    [ObservableProperty] private string _stateGlyph = "";
     [ObservableProperty] private bool _isPaused;
     [ObservableProperty] private bool _isSelected;
     [ObservableProperty] private Brush _rowBackground = new SolidColorBrush();
@@ -129,7 +133,19 @@ public sealed partial class TorrentViewModel : ObservableObject
             Display.Downloading => "Загрузка",
             Display.Error       => "Ошибка",
             Display.Hashing     => "Проверка",
+            Display.Paused      => "Пауза",
             _                   => "Ожидание",
+        };
+        // Segoe MDL2 Assets codepoints — Upload (U+E898), Download (U+E896),
+        // Warning (U+E7BA), Sync (U+E895), Pause (U+E769), Hourglass (U+E823).
+        StateGlyph = d switch
+        {
+            Display.Seeding     => "",
+            Display.Downloading => "",
+            Display.Error       => "",
+            Display.Hashing     => "",
+            Display.Paused      => "",
+            _                   => "",
         };
         RebuildRowBackground();
     }
@@ -151,6 +167,9 @@ public sealed partial class TorrentViewModel : ObservableObject
             Display.Seeding     => RowBrushes.StatusSeeding,
             Display.Hashing     => RowBrushes.StatusHashing,
             Display.Error       => RowBrushes.StatusError,
+            // Paused shares the idle grey — only the glyph in the state column differs
+            // from Waiting. No dedicated setting for a "paused" colour.
+            Display.Paused      => RowBrushes.StatusIdle,
             _                   => RowBrushes.StatusIdle,
         };
         // Seeding = 100 %. If we tinted the whole row it would look "done but still
@@ -192,6 +211,7 @@ public sealed partial class TorrentViewModel : ObservableObject
         TorrentState.Seeding                                     => Display.Seeding,
         TorrentState.Error                                       => Display.Error,
         TorrentState.Hashing                                     => Display.Hashing,
+        TorrentState.Paused or TorrentState.Stopped              => Display.Paused,
         TorrentState.Downloading when m.Monitor.DownloadRate > 0 => Display.Downloading,
         _                                                        => Display.Waiting,
     };
