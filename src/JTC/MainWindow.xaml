@@ -256,9 +256,12 @@
                                 <TextBlock Grid.Column="5" VerticalAlignment="Center" HorizontalAlignment="Center"
                                            Foreground="{x:Bind RowForeground, Mode=OneWay}"
                                            Text="{x:Bind PeerCount, Mode=OneWay}" />
-                                <TextBlock Grid.Column="6" VerticalAlignment="Center" HorizontalAlignment="Center"
-                                           Foreground="{x:Bind RowForeground, Mode=OneWay}"
-                                           Text="{x:Bind StateText, Mode=OneWay}" />
+                                <FontIcon Grid.Column="6" VerticalAlignment="Center" HorizontalAlignment="Center"
+                                          FontFamily="Segoe MDL2 Assets"
+                                          FontSize="16"
+                                          Glyph="{x:Bind StateGlyph, Mode=OneWay}"
+                                          Foreground="{x:Bind StatusBrush, Mode=OneWay}"
+                                          ToolTipService.ToolTip="{x:Bind StateText, Mode=OneWay}" />
                             </Grid>
                         </Grid>
                     </Border>
