@@ -203,12 +203,15 @@ public sealed record AppSettings
     public bool AutoUpdateEnabled { get; init; } = true;
 
     // v0.5.7+ — user-controlled corner rounding.
-    // ButtonCornerRadius: applies to toolbar buttons (0 = square, 20 = fully pill for
-    //   ~32-tall icon buttons). Default 16 matches the v0.5.6 baked value.
-    // PlashkaCornerRadius: applies to row Borders (0 = square, 22 = fully pill for
-    //   44-tall rows; values above 22 don't add extra roundness). Default 22 = pill.
-    public int ButtonCornerRadius { get; init; } = 16;
-    public int PlashkaCornerRadius { get; init; } = 22;
+    // ButtonCornerRadius: applies to toolbar buttons. Slider caps at 15 (v0.6.1);
+    //   0 = square, 15 = very rounded but not fully pill.
+    // PlashkaCornerRadius: applies to row Borders. Slider caps at 20 (v0.6.1);
+    //   0 = square, 20 = very rounded (a fully-pill 44-tall row would need 22, but
+    //   the aesthetic call is that near-pill is the intended max).
+    // Legacy users may have values above the new caps saved from v0.5.7-v0.6.0 — those
+    // render at the saved value; the slider clamps on next touch.
+    public int ButtonCornerRadius { get; init; } = 15;
+    public int PlashkaCornerRadius { get; init; } = 20;
 
     // v0.5.7+ — how the status indicator is drawn on each row. Circle (default) is
     // an 8×8 dot inset from the left, matching the capsule plashka look. Stripe is

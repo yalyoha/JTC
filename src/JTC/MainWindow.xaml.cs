@@ -31,11 +31,14 @@ public sealed partial class MainWindow : Window
     // so there is no ambiguity.
     private bool _isHiddenToTray;
 
-    // Update-check throttle state. GitHub allows 60 unauthenticated requests per hour
-    // per IP, and refocusing the window shouldn't hammer that budget; 30 min per session
-    // is comfortable. _snoozedVersion records a version the user dismissed with "Позже"
-    // so we don't re-prompt for the same release until they restart.
-    private DateTime _lastUpdateCheckUtc = DateTime.MinValue;
+    // Update-check state. Every window Activation triggers a check (v0.6.1+ — the
+    // previous 30-min throttle meant users had to restart the app to force a check
+    // after a release landed). Re-entry is still blocked by _updateFlowInProgress so
+    // rapid alt-tab while the update dialog is open doesn't stack calls. GitHub's
+    // 60 req/hr unauthenticated limit is generous enough for realistic focus patterns
+    // — worst case is a 429 the try/catch swallows.
+    // _snoozedVersion records a version the user dismissed with "Позже" so we don't
+    // re-prompt for the same release until they restart.
     private Version? _snoozedVersion;
     private bool _updateFlowInProgress;
 
@@ -140,11 +143,10 @@ public sealed partial class MainWindow : Window
     {
         // Only react to activation, not deactivation.
         if (args.WindowActivationState == WindowActivationState.Deactivated) return;
-        // 30-min throttle so alt-tab thrashing doesn't spam the GitHub API.
-        if (DateTime.UtcNow - _lastUpdateCheckUtc < TimeSpan.FromMinutes(30)) return;
-        // Guard against re-entry — one update flow at a time.
+        // Guard against re-entry — one update flow at a time. No time throttle: every
+        // focus event triggers a check so a fresh release doesn't need an app restart
+        // to notice (v0.6.1). See _updateFlowInProgress comment for rate-limit thinking.
         if (_updateFlowInProgress) return;
-        _lastUpdateCheckUtc = DateTime.UtcNow;
 
         try
         {
@@ -1244,7 +1246,7 @@ public sealed partial class MainWindow : Window
         SyncButtonRadiusHeader();
         var buttonRadiusSlider = new Microsoft.UI.Xaml.Controls.Slider
         {
-            Minimum = 0, Maximum = 20, Value = workingButtonRadius,
+            Minimum = 0, Maximum = 15, Value = workingButtonRadius,
             StepFrequency = 1, SmallChange = 1, LargeChange = 4,
             TickPlacement = Microsoft.UI.Xaml.Controls.Primitives.TickPlacement.None,
             Width = 320, HorizontalAlignment = HorizontalAlignment.Left,
@@ -1262,7 +1264,7 @@ public sealed partial class MainWindow : Window
         SyncPlashkaRadiusHeader();
         var plashkaRadiusSlider = new Microsoft.UI.Xaml.Controls.Slider
         {
-            Minimum = 0, Maximum = 30, Value = workingPlashkaRadius,
+            Minimum = 0, Maximum = 20, Value = workingPlashkaRadius,
             StepFrequency = 1, SmallChange = 1, LargeChange = 4,
             TickPlacement = Microsoft.UI.Xaml.Controls.Primitives.TickPlacement.None,
             Width = 320, HorizontalAlignment = HorizontalAlignment.Left,

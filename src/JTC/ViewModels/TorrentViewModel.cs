@@ -35,7 +35,11 @@ public sealed partial class TorrentViewModel : ObservableObject
     [ObservableProperty] private string _progressText = "0.0%";
     [ObservableProperty] private string _downloadRateText = "—";
     [ObservableProperty] private string _uploadRateText = "—";
-    [ObservableProperty] private int _peerCount;
+    // v0.6.1: split the old "Peers" column into leechers (still downloading) and seeds
+    // (100 %, uploading only). Names match the Peers table columns in the row header:
+    // "Пиры" = LeecherCount, "Сиды" = SeedCount.
+    [ObservableProperty] private int _leecherCount;
+    [ObservableProperty] private int _seedCount;
     [ObservableProperty] private string _stateText = "Ожидание";
     // Segoe MDL2 Assets glyph for the row's «Состояние» column. Mirrors StateText through
     // the same ApplyDisplay switch so the two are always in sync. Default is Hourglass
@@ -98,7 +102,12 @@ public sealed partial class TorrentViewModel : ObservableObject
         ProgressText = $"{Manager.Progress:F1}%";
         DownloadRateText = Formatting.RateToHuman(Manager.Monitor.DownloadRate);
         UploadRateText = Formatting.RateToHuman(Manager.Monitor.UploadRate);
-        PeerCount = Manager.Peers.Available;
+        // MonoTorrent tracks known-from-tracker/DHT/PeX counts here. Both fields exist
+        // on TorrentManager.Peers in v3.0.2 (see TorrentService.CollectPeerStats). Zero
+        // when the tracker hasn't announced yet — that reads as "—" is not what we want,
+        // just show 0 like the old PeerCount did.
+        LeecherCount = Manager.Peers.Leechs;
+        SeedCount    = Manager.Peers.Seeds;
         IsPaused = Manager.State is TorrentState.Paused or TorrentState.Stopped;
         ApplyDisplay(ComputeDisplay(Manager));
     }

@@ -39,10 +39,10 @@ public static class ThemeHelper
     public static Color CurrentPlashkaFg { get; private set; } = MustParseHex(DefaultColors.WhitePlashkaFgHex);
 
     /// <summary>Toolbar-button corner radius. New TorrentViewModels read this at construction.</summary>
-    public static int CurrentButtonCornerRadius { get; private set; } = 16;
+    public static int CurrentButtonCornerRadius { get; private set; } = 15;
 
     /// <summary>Row (plashka) corner radius. New TorrentViewModels read this at construction.</summary>
-    public static int CurrentPlashkaCornerRadius { get; private set; } = 22;
+    public static int CurrentPlashkaCornerRadius { get; private set; } = 20;
 
     /// <summary>Update the cached corner-radius values so newly-created row VMs pick them up.</summary>
     public static void SetCornerRadii(int buttonRadius, int plashkaRadius)

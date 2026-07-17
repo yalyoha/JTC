@@ -131,7 +131,11 @@
             </ListView.Resources>
             <ListView.HeaderTemplate>
                 <DataTemplate>
-                    <Grid Padding="8,4">
+                    <!-- Padding matches the row's inner Grid padding (30,0,20,0) so header
+                         columns line up horizontally with the row values below. Vertical
+                         padding is 4 top/bottom for breathing room between the header and
+                         the toolbar / first row. -->
+                    <Grid Padding="30,4,20,4">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="2.5*" />
                             <ColumnDefinition Width="80" />
@@ -139,20 +143,23 @@
                             <ColumnDefinition Width="100" />
                             <ColumnDefinition Width="100" />
                             <ColumnDefinition Width="60" />
-                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="60" />
+                            <ColumnDefinition Width="60" />
                         </Grid.ColumnDefinitions>
                         <!-- Имя — left-aligned (long text with ellipsis). Размер / Прогресс /
-                             Пиры / Состояние — centred so short values (numbers, percentages,
-                             short state labels) sit tidily in their column instead of hugging
-                             the left edge. Rate columns (↓ / ↑) stay left because their unit
-                             changes width (B/s → KB/s → MB/s) and centring would jitter. -->
+                             Пиры / Сиды — centred so short values (numbers, percentages)
+                             sit tidily in their column instead of hugging the left edge.
+                             Rate columns (↓ / ↑) stay left because their unit changes width
+                             (B/s → KB/s → MB/s) and centring would jitter. The last column
+                             carries only a status glyph — no header text needed since the
+                             icons are self-explanatory. -->
                         <TextBlock Grid.Column="0" Text="Имя"       Style="{ThemeResource CaptionTextBlockStyle}" />
                         <TextBlock Grid.Column="1" Text="Размер"    Style="{ThemeResource CaptionTextBlockStyle}" HorizontalAlignment="Center" />
                         <TextBlock Grid.Column="2" Text="Прогресс"  Style="{ThemeResource CaptionTextBlockStyle}" HorizontalAlignment="Center" />
                         <TextBlock Grid.Column="3" Text="↓"         Style="{ThemeResource CaptionTextBlockStyle}" />
                         <TextBlock Grid.Column="4" Text="↑"         Style="{ThemeResource CaptionTextBlockStyle}" />
                         <TextBlock Grid.Column="5" Text="Пиры"      Style="{ThemeResource CaptionTextBlockStyle}" HorizontalAlignment="Center" />
-                        <TextBlock Grid.Column="6" Text="Состояние" Style="{ThemeResource CaptionTextBlockStyle}" HorizontalAlignment="Center" />
+                        <TextBlock Grid.Column="6" Text="Сиды"      Style="{ThemeResource CaptionTextBlockStyle}" HorizontalAlignment="Center" />
                     </Grid>
                 </DataTemplate>
             </ListView.HeaderTemplate>
@@ -236,7 +243,8 @@
                                     <ColumnDefinition Width="100" />
                                     <ColumnDefinition Width="100" />
                                     <ColumnDefinition Width="60" />
-                                    <ColumnDefinition Width="120" />
+                                    <ColumnDefinition Width="60" />
+                                    <ColumnDefinition Width="60" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Grid.Column="0" VerticalAlignment="Center"
                                            Foreground="{x:Bind RowForeground, Mode=OneWay}"
@@ -255,8 +263,11 @@
                                            Text="{x:Bind UploadRateText, Mode=OneWay}" />
                                 <TextBlock Grid.Column="5" VerticalAlignment="Center" HorizontalAlignment="Center"
                                            Foreground="{x:Bind RowForeground, Mode=OneWay}"
-                                           Text="{x:Bind PeerCount, Mode=OneWay}" />
-                                <FontIcon Grid.Column="6" VerticalAlignment="Center" HorizontalAlignment="Center"
+                                           Text="{x:Bind LeecherCount, Mode=OneWay}" />
+                                <TextBlock Grid.Column="6" VerticalAlignment="Center" HorizontalAlignment="Center"
+                                           Foreground="{x:Bind RowForeground, Mode=OneWay}"
+                                           Text="{x:Bind SeedCount, Mode=OneWay}" />
+                                <FontIcon Grid.Column="7" VerticalAlignment="Center" HorizontalAlignment="Center"
                                           FontFamily="Segoe MDL2 Assets"
                                           FontSize="16"
                                           Glyph="{x:Bind StateGlyph, Mode=OneWay}"
