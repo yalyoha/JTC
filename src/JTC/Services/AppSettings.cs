@@ -54,12 +54,15 @@ public sealed record ColorPreset
 
 /// <summary>
 /// Built-in color presets that always appear at the top of the preset list in the settings
-/// dialog. Legacy "Фирменная 1" (pink → orange) and "Фирменная 2" (blue → lime).
+/// dialog. "Юниор" (blue → lime — the brand palette, doubles as fresh-install default) and
+/// "Фламинго" (pink → orange) are the historical brand pair, originally shipped as
+/// "Фирменная 1/2", then descriptive "Сине-зелёная" / "Розово-оранжевая", renamed in v0.6
+/// so the built-in list reads as one coherent set of names.
 /// </summary>
 public static class BuiltInColorPresets
 {
-    public const string PinkOrangeName = "Розово-оранжевая";
-    public const string BlueLimeName   = "Сине-зелёная";
+    public const string FlamingoName = "Фламинго";
+    public const string YuniorName   = "Юниор";
 
     public const string PinkTopHex     = "#FFE52E71";
     public const string PinkBottomHex  = "#FFFF8A00";
@@ -72,17 +75,18 @@ public static class BuiltInColorPresets
     // of the ComboBox and are non-editable / non-deletable (edit + delete apply only
     // to user-saved presets appended below them).
     //
-    // v0.5.6 note: Blue-Lime is intentionally first — it doubles as the default palette
-    // for fresh installs (see ThemeHelper.DefaultTop / DefaultBottom). Pink-Orange is
-    // the legacy default from v0.3-v0.5.5, kept as #2.
+    // v0.5.6 note: Юниор (blue → lime, the brand palette) is intentionally first — it
+    // doubles as the default palette for fresh installs (see ThemeHelper.DefaultTop /
+    // DefaultBottom). Фламинго (pink → orange) is the legacy default from v0.3-v0.5.5,
+    // kept as #2.
     public static readonly IReadOnlyList<ColorPreset> All = new[]
     {
-        new ColorPreset { Name = BlueLimeName,          TopHex = BlueTopHex,     BottomHex = BlueBottomHex,
+        new ColorPreset { Name = YuniorName,            TopHex = BlueTopHex,     BottomHex = BlueBottomHex,
             PlashkaBgHex = "#FFFFFFFF", PlashkaFgHex = "#FF212121",
             StatusIdleHex        = "#FF90A4AE", StatusDownloadingHex = "#FFFF9100",
             StatusSeedingHex     = "#FF00E676", StatusHashingHex     = "#FF2979FF",
             StatusErrorHex       = "#FFFF1744" },
-        new ColorPreset { Name = PinkOrangeName,        TopHex = PinkTopHex,     BottomHex = PinkBottomHex,
+        new ColorPreset { Name = FlamingoName,          TopHex = PinkTopHex,     BottomHex = PinkBottomHex,
             PlashkaBgHex = "#FFFFFFFF", PlashkaFgHex = "#FF212121",
             StatusIdleHex        = "#FF90A4AE", StatusDownloadingHex = "#FFFF9100",
             StatusSeedingHex     = "#FF00E676", StatusHashingHex     = "#FF2979FF",

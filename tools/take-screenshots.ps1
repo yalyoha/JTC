@@ -40,13 +40,13 @@ $configs = @(
     #    LEFT-STRIPE status indicator. Even presets (2,4,6,8,10): keep the
     #    default rounded capsule + circle look. Mix intentionally showcases
     #    v0.5.7's new "Оформление" controls in the gallery.
-    @{ file = 'theme-preset-01-blue-lime.png';      note = 'Сине-зелёная (built-in #1 — default) · square + stripe'
+    @{ file = 'theme-preset-01-blue-lime.png';      note = 'Юниор (built-in #1 — default) · square + stripe'
        fields = @{ Theme='Colored'; ColoredTopHex='#FF324166'; ColoredBottomHex='#FF7AB317'
                    PlashkaBgHex='#FFFFFFFF'; PlashkaFgHex='#FF212121'
                    StatusIdleHex='#FF90A4AE'; StatusDownloadingHex='#FFFF9100'
                    StatusSeedingHex='#FF00E676'; StatusHashingHex='#FF2979FF'; StatusErrorHex='#FFFF1744'
                    ButtonCornerRadius=0; PlashkaCornerRadius=0; StatusIndicatorStyle='Stripe' } },
-    @{ file = 'theme-preset-02-pink-orange.png';    note = 'Розово-оранжевая (built-in #2)'
+    @{ file = 'theme-preset-02-pink-orange.png';    note = 'Фламинго (built-in #2)'
        fields = @{ Theme='Colored'; ColoredTopHex='#FFE52E71'; ColoredBottomHex='#FFFF8A00'
                    PlashkaBgHex='#FFFFFFFF'; PlashkaFgHex='#FF212121'
                    StatusIdleHex='#FF90A4AE'; StatusDownloadingHex='#FFFF9100'

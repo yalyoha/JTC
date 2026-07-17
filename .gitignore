@@ -30,3 +30,5 @@ screenshots/*
 !screenshots/settings-*.png
 !screenshots/icon-preview.png
 /ghp.txt
+/bot.txt
+/claude-tg.ps1
