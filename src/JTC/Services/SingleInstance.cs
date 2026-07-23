@@ -43,12 +43,14 @@ public static class SingleInstance
     public static bool TryClaimOrHandOff(string[] args)
     {
         var source = ExtractLaunchSource(args);
+        DebugLog.Info($"SingleInstance: TryClaimOrHandOff cliArgs=[{string.Join(" | ", args)}] extractedSource='{source ?? "<null>"}'");
 
         _mutex = new Mutex(initiallyOwned: false, MutexName, out bool createdNew);
         if (createdNew)
         {
             // First instance — take ownership and stay running.
             try { _mutex.WaitOne(0); } catch { /* already owned, fine */ }
+            DebugLog.Info("SingleInstance: primary — took mutex, staying");
             return false;
         }
 
@@ -56,13 +58,29 @@ public static class SingleInstance
         // "just bring the primary's window back from the tray"; a torrent path or a
         // magnet URI means "open this in the primary". The primary detects which by
         // checking the "magnet:" prefix.
+        //
+        // Atomic staging pattern: write to a .tmp file first (not matched by the primary's
+        // FileSystemWatcher filter of *.txt), then rename to .txt. Without this, the naive
+        // File.WriteAllText race allowed the primary's watcher to fire on the open-for-write
+        // event while the file was still empty on disk → ReadAllText either returned empty
+        // or threw (file locked), catch swallowed it, empty content dispatched as
+        // ShowWindowRequested, and the torrent path was silently lost. Bug repro: double-click
+        // a .torrent while JTC is running — reported "~20 % of clicks the dialog never appears".
         try
         {
             Directory.CreateDirectory(InboxDir);
-            var target = Path.Combine(InboxDir, Guid.NewGuid().ToString("N") + ".txt");
-            File.WriteAllText(target, source ?? string.Empty);
+            var stem = Guid.NewGuid().ToString("N");
+            var stagingPath = Path.Combine(InboxDir, stem + ".tmp");
+            var finalPath   = Path.Combine(InboxDir, stem + ".txt");
+            File.WriteAllText(stagingPath, source ?? string.Empty);
+            File.Move(stagingPath, finalPath);
+            DebugLog.Info($"SingleInstance: secondary wrote {Path.GetFileName(finalPath)} content='{(source is null ? "<empty>" : (source.Length > 80 ? source.Substring(0,77) + "..." : source))}'");
         }
-        catch { /* best-effort — user can just add manually */ }
+        catch (Exception ex)
+        {
+            // best-effort — user can just add manually
+            DebugLog.Error("SingleInstance: secondary inbox write", ex);
+        }
         _mutex.Dispose();
         _mutex = null;
         return true;
@@ -76,6 +94,7 @@ public static class SingleInstance
     public static void StartWatching()
     {
         Directory.CreateDirectory(InboxDir);
+        DebugLog.Info($"SingleInstance: StartWatching at {InboxDir}");
         // Any @shutdown marker present at startup was left there by an installer that
         // already succeeded — the process it was meant to kill is dead (installer ran
         // taskkill /F as fallback in v0.4.2+). Acting on it here would make the fresh
@@ -92,7 +111,13 @@ public static class SingleInstance
         // Subsequent DrainInbox calls (from FileSystemWatcher events) DO act on
         // @shutdown — that's the intended path when an installer runs while the
         // primary instance is alive.
-        _watcher.Created += (_, _) => DrainInbox();
+        //
+        // Subscribe to BOTH Created and Renamed events — secondary instances now write
+        // to <stem>.tmp then rename to <stem>.txt, and on Windows FileSystemWatcher fires
+        // Renamed (not Created) when the destination filename appears via rename. Without
+        // the Renamed handler, the primary would miss all handoffs from the atomic write path.
+        _watcher.Created += (_, e) => { DebugLog.Info($"SingleInstance: watcher Created {e.Name}"); DrainInbox(); };
+        _watcher.Renamed += (_, e) => { DebugLog.Info($"SingleInstance: watcher Renamed {e.OldName} → {e.Name}"); DrainInbox(); };
     }
 
     private static void DrainInbox(bool ignoreShutdownMarker = false)
@@ -101,9 +126,32 @@ public static class SingleInstance
         {
             foreach (var file in Directory.EnumerateFiles(InboxDir, "*.txt"))
             {
+                // Retry a few times if the file is still locked by the writer. The atomic
+                // .tmp → .txt rename in TryClaimOrHandOff makes this rare now, but keep the
+                // retry as defence for exotic timing. Critical: on failure DO NOT delete —
+                // the next watcher event will retry. Previous code silently caught the
+                // read exception, treated content as empty (→ ShowWindowRequested), and
+                // deleted the file — that lost the torrent path on ~20 % of double-clicks.
                 string? content = null;
-                try { content = File.ReadAllText(file).Trim(); }
-                catch { /* file may still be locked by writer; skip and retry next tick */ }
+                Exception? lastReadEx = null;
+                for (int attempt = 0; attempt < 4; attempt++)
+                {
+                    try { content = File.ReadAllText(file).Trim(); break; }
+                    catch (Exception ex) { lastReadEx = ex; Thread.Sleep(50); }
+                }
+                if (content is null)
+                {
+                    DebugLog.Info($"inbox: {Path.GetFileName(file)} locked after 4 tries ({lastReadEx?.GetType().Name}) — leaving for next event");
+                    continue; // do not delete; wait for next watcher tick
+                }
+
+                var preview = content.Length > 80 ? content.Substring(0, 77) + "..." : content;
+                var kind =
+                    string.Equals(content, ShutdownMarker, StringComparison.OrdinalIgnoreCase) ? "shutdown" :
+                    string.IsNullOrEmpty(content)                                               ? "show-window" :
+                    content.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase)           ? "magnet" :
+                                                                                                  "torrent-path";
+                DebugLog.Info($"inbox: {Path.GetFileName(file)} → {kind} '{preview}' (ignoreShutdown={ignoreShutdownMarker})");
 
                 if (string.Equals(content, ShutdownMarker, StringComparison.OrdinalIgnoreCase))
                 {

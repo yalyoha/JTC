@@ -371,8 +371,9 @@ public sealed partial class MainWindow : Window
     /// </summary>
     public async Task OpenTorrentPathAsync(string torrentPath)
     {
+        DebugLog.Info($"OpenTorrentPathAsync ENTER path='{torrentPath}' exists={System.IO.File.Exists(torrentPath)}");
         var downloadDir = await GetOrPickDownloadDirAsync();
-        if (downloadDir is null) return;
+        if (downloadDir is null) { DebugLog.Info("OpenTorrentPathAsync: user cancelled download dir picker"); return; }
 
         // For multi-file torrents (typical case: a TV season / album), let the user pick
         // which files to actually download. Parse the .torrent locally first — this doesn't

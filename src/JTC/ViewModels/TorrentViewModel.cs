@@ -188,7 +188,15 @@ public sealed partial class TorrentViewModel : ObservableObject
         // status colours over a matching-tone plashka the fill was nearly indistinguishable
         // from the background after switching between certain theme presets, and users
         // read that as "progress bar disappeared".
-        var fill = _current == Display.Seeding
+        //
+        // Safety valve for the "phantom Seeding" bug: MonoTorrent 3.0.2 sometimes flips
+        // a mid-download torrent to Seeding state without progress reaching 100 % (piece
+        // picker stalls, peers all choke, bitfield goes stale). If we blindly cleared the
+        // fill on any Seeding state, the user sees a full green plashka on a half-finished
+        // torrent — the bug looks like a UI glitch. Keep the progress tint visible while
+        // prog < 99.9 % so incomplete "Seeding" is at least honest about what's downloaded.
+        // TorrentService's stall-watchdog handles the recovery side of this.
+        var fill = (_current == Display.Seeding && Progress >= 99.9)
             ? bg
             : RowBrushes.CompositeOver(bg, statusColor, 0.25);
 

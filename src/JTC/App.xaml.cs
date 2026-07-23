@@ -18,6 +18,16 @@ public partial class App : Application
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
         var cliArgs = Environment.GetCommandLineArgs();
+        // Log BOTH activation sources so we can diagnose "double-click doesn't add" reports:
+        //   Environment.GetCommandLineArgs() — the process's raw CLI (works in unpackaged
+        //     WinUI 3 for shell-launched files, but not always for other activation kinds)
+        //   LaunchActivatedEventArgs.Arguments — the WinUI activation payload (a single
+        //     string; empty for a plain launch, populated for some activation kinds)
+        // If GetCommandLineArgs is missing the file path, we still have Arguments as a
+        // fallback. Prior to this change we only trusted GetCommandLineArgs.
+        var winuiArgs = args?.Arguments ?? "";
+        DebugLog.Info($"OnLaunched: cliArgs=[{string.Join(" | ", cliArgs)}]");
+        DebugLog.Info($"OnLaunched: winui.Arguments='{winuiArgs}'");
 
         // If another TClient instance is already running, hand off any .torrent arg to it
         // via the inbox file, then bail out. The primary picks it up.
@@ -60,7 +70,25 @@ public partial class App : Application
         // Handle the launch argument this very process was given, if any — either a
         // .torrent file path (from Explorer / file association) or a magnet: URI (from
         // a browser via the URL scheme handler).
+        //
+        // Fall back to LaunchActivatedEventArgs.Arguments (winuiArgs) when
+        // Environment.GetCommandLineArgs() doesn't reveal the file path — some activation
+        // paths in WinUI 3 unpackaged put the argument there and leave GetCommandLineArgs
+        // with just the exe path. We keep GetCommandLineArgs as first source because it's
+        // reliably CommandLineToArgvW-tokenised (respects quoted paths with spaces);
+        // winuiArgs is a raw single string that may need trimming and quote-stripping.
         var initial = SingleInstance.ExtractLaunchSource(cliArgs);
+        if (initial is null && !string.IsNullOrWhiteSpace(winuiArgs))
+        {
+            var trimmed = winuiArgs.Trim().Trim('"');
+            if (trimmed.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase)
+                || (trimmed.EndsWith(".torrent", StringComparison.OrdinalIgnoreCase) && File.Exists(trimmed)))
+            {
+                initial = trimmed;
+                DebugLog.Info($"OnLaunched: recovered initial source from winui.Arguments: '{initial}'");
+            }
+        }
+        DebugLog.Info($"OnLaunched: initial source for primary = '{initial ?? "<none>"}'");
         if (initial is not null)
         {
             if (initial.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))

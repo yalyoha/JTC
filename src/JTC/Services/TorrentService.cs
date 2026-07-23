@@ -75,6 +75,21 @@ public sealed class TorrentService : IAsyncDisposable
     // we never hop threads inside a single OnManagerStateChanged invocation.
     private readonly Dictionary<TorrentManager, TorrentRestartPolicy> _restartPolicies = new();
 
+    // Consecutive "phantom Seeding" tick count per manager. StallCheckTick increments each
+    // time it sees a manager stuck in Seeding with progress well below 100 % — after three
+    // consecutive hits (~90 s) we assume MonoTorrent's bitfield is stale and force a hash
+    // recheck. Reset to zero when the manager leaves Seeding (handled in OnManagerStateChanged)
+    // or after a recheck completes. Access only from the timer thread and state handler; both
+    // never run concurrently against the same manager's slot in practice.
+    private readonly Dictionary<TorrentManager, int> _stallHits = new();
+    // Managers currently being rechecked by the phantom-Seeding path. Prevents overlapping
+    // recheck attempts if the tick fires while a previous recheck is still running (Hash-
+    // CheckAsync on a large torrent can take minutes).
+    private readonly HashSet<TorrentManager> _stallRecheckInProgress = new();
+    // Periodic stall watchdog. Fires every 30 s after a 60 s startup grace period, so freshly-
+    // restored torrents get time to legitimately settle before we start second-guessing state.
+    private readonly System.Threading.Timer _stallTimer;
+
     // Cached AppSettings. Prior code called SettingsStore.Load() (synchronous disk read)
     // from CanStartMore() inside a while-loop on the hot queue path — every state
     // transition would re-read the same JSON. Now we snapshot at construction and refresh
@@ -145,6 +160,22 @@ public sealed class TorrentService : IAsyncDisposable
             FastResumeTick, null,
             dueTime: TimeSpan.FromSeconds(45),
             period: TimeSpan.FromSeconds(45));
+
+        // Stall watchdog for "phantom Seeding" (MonoTorrent flips a mid-download torrent
+        // to Seeding state without progress reaching 100 %). 60 s startup grace so restored
+        // Seeding torrents that are legitimately complete don't get flagged, then 30 s tick.
+        _stallTimer = new System.Threading.Timer(
+            StallCheckTick, null,
+            dueTime: TimeSpan.FromSeconds(60),
+            period: TimeSpan.FromSeconds(30));
+
+        // Fire-and-forget DHT warm-up so bootstrapping runs in parallel with LoadStateAsync
+        // and the first UI paint instead of lazily on the first Downloading torrent — the
+        // lazy path leaves DHT NotReady for 15–60 s of dead time after app launch (verified
+        // in debug.log: dht=NotReady persists across whole sessions when only Seeding
+        // torrents are loaded). Magnet metadata fetches lose the most from cold DHT;
+        // .torrent adds recover a smaller window because trackers work independently.
+        _ = Task.Run(WarmupDhtAsync);
     }
 
     /// <summary>
@@ -536,6 +567,7 @@ public sealed class TorrentService : IAsyncDisposable
         _disposed = true;
         await _diagTimer.DisposeAsync();
         await _fastResumeTimer.DisposeAsync();
+        await _stallTimer.DisposeAsync();
         foreach (var mgr in _engine.Torrents)
             mgr.TorrentStateChanged -= OnManagerStateChanged;
         await _engine.StopAllAsync();
@@ -554,6 +586,17 @@ public sealed class TorrentService : IAsyncDisposable
     {
         var manager = sender as TorrentManager;
 
+        // Unconditional transition log. Historically we only logged Error transitions —
+        // which meant a "download stalls to Seeding at 40 %" bug (MonoTorrent's piece
+        // picker gets confused → premature Seeding flip without progress ≈ 100 %) left
+        // nothing in the log to reason about. Every transition now goes to debug.log
+        // with the manager's current progress, so post-mortem can spot bad flips.
+        if (manager is not null)
+        {
+            var progNow = manager.Progress;
+            DebugLog.Info($"state '{ShortName(manager.Torrent?.Name)}': {e.OldState} → {e.NewState} (prog={progNow:F1}%)");
+        }
+
         // A successful re-entry into a downloading state means the previous retry cycle
         // (if any) worked. Reset the policy so the next stall gets a fresh 5-attempt budget.
         if (manager is not null && !WasDownloading(e.OldState) && WasDownloading(e.NewState))
@@ -561,6 +604,12 @@ public sealed class TorrentService : IAsyncDisposable
             if (_restartPolicies.TryGetValue(manager, out var priorPolicy))
                 priorPolicy.RecordSuccess();
         }
+
+        // Reset the stall-watchdog's consecutive-hit counter for this manager when it leaves
+        // a "phantom Seeding" state — either the recheck fixed the bitfield or MonoTorrent
+        // corrected itself. Counter lives in _stallHits (Dictionary keyed by manager).
+        if (manager is not null && e.OldState == TorrentState.Seeding && e.NewState != TorrentState.Seeding)
+            _stallHits.Remove(manager);
 
         // Diagnostic: capture Error-state transitions with the underlying cause so post-mortem
         // has a concrete exception to look at instead of just "torrent went red". Done outside
@@ -744,6 +793,89 @@ public sealed class TorrentService : IAsyncDisposable
         return name.Length <= 60 ? name : name.Substring(0, 57) + "…";
     }
 
+    // Below this cutoff, a Seeding state at that progress is treated as a MonoTorrent
+    // bookkeeping bug — real 100 % has margin over 99 % (bytes-vs-piece rounding at most
+    // pulls progress a fraction below 100). 99.0 % over 3 consecutive ticks (~90 s) means
+    // several MB missing that MonoTorrent won't try to fetch. Anything closer to 100 % is
+    // more likely to be legitimate.
+    private const double PhantomSeedingProgressCutoff = 99.0;
+    private const int PhantomSeedingHitsRequired = 3;
+
+    // Stall watchdog tick: iterate current torrents, count consecutive phantom-Seeding hits
+    // (state=Seeding with progress well under 100 %), and force a hash recheck once we've
+    // seen the same condition three times in a row. Rechecks are fire-and-forget on a
+    // background thread — HashCheckAsync on a 5+ GB torrent can take minutes and we don't
+    // want the timer thread to block.
+    private void StallCheckTick(object? _)
+    {
+        if (_disposed) return;
+        try
+        {
+            var snapshot = _engine.Torrents.ToArray();
+            foreach (var m in snapshot)
+            {
+                try { EvaluateOneForStall(m); }
+                catch (Exception ex) { DebugLog.Error($"stall check '{ShortName(m.Torrent?.Name)}'", ex); }
+            }
+        }
+        catch (Exception ex) { DebugLog.Error("stall check tick", ex); }
+    }
+
+    private void EvaluateOneForStall(TorrentManager m)
+    {
+        if (m.State != TorrentState.Seeding)
+        {
+            // Not Seeding this tick — reset the hit counter so a future phantom episode
+            // starts from zero, not from stale accounting.
+            _stallHits.Remove(m);
+            return;
+        }
+        var progress = m.Progress;
+        if (progress >= PhantomSeedingProgressCutoff)
+        {
+            _stallHits.Remove(m);
+            return;
+        }
+        if (_stallRecheckInProgress.Contains(m))
+            return; // already fixing this one, skip until it finishes
+
+        _stallHits.TryGetValue(m, out var hits);
+        hits++;
+        _stallHits[m] = hits;
+        var name = ShortName(m.Torrent?.Name);
+        DebugLog.Info($"stall watchdog: '{name}' phantom Seeding (prog={progress:F1}%, hit {hits}/{PhantomSeedingHitsRequired})");
+
+        if (hits < PhantomSeedingHitsRequired) return;
+        _stallHits.Remove(m);
+        _ = Task.Run(() => TryPhantomSeedingRecheckAsync(m));
+    }
+
+    // Force a hash recheck to reset MonoTorrent's stale bitfield: Stop, HashCheck, autoStart.
+    // Runs off the timer thread on a background task. Failure is logged; on success the state
+    // machine will emit its normal transitions (Hashing → Downloading or Seeding) which
+    // OnManagerStateChanged already logs.
+    private async Task TryPhantomSeedingRecheckAsync(TorrentManager m)
+    {
+        _stallRecheckInProgress.Add(m);
+        var name = ShortName(m.Torrent?.Name);
+        try
+        {
+            DebugLog.Info($"stall watchdog: '{name}' forcing StopAsync + HashCheckAsync");
+            try { await m.StopAsync(TimeSpan.FromSeconds(2)); }
+            catch (Exception ex) { DebugLog.Error($"stall watchdog Stop '{name}'", ex); }
+            await m.HashCheckAsync(autoStart: true);
+            DebugLog.Info($"stall watchdog: '{name}' recheck done, state={m.State} prog={m.Progress:F1}%");
+        }
+        catch (Exception ex)
+        {
+            DebugLog.Error($"stall watchdog recheck '{name}'", ex);
+        }
+        finally
+        {
+            _stallRecheckInProgress.Remove(m);
+        }
+    }
+
     // Timer tick: for each Downloading/Seeding torrent, ask MonoTorrent to flush its
     // fast-resume snapshot to EngineSettings.FastResumeCacheDirectory. The method is
     // internal so we invoke by reflection — see field comments on _saveFastResumeMethod.
@@ -822,6 +954,54 @@ public sealed class TorrentService : IAsyncDisposable
         return mi;
     }
 
+    // ClientEngine.DhtEngine is a non-public property returning an internal IDhtEngine;
+    // both are unreachable from user code without reflection. We call StartAsync() on it
+    // early so the UDP listener binds, cached nodes load (AutoSaveLoadDhtCache=true), and
+    // bootstrap begins immediately at app launch — the alternative is MonoTorrent's
+    // internal lazy path that only triggers on the first Downloading torrent. If reflection
+    // ever breaks (MonoTorrent renames the member), we log once and silently fall back to
+    // the original behaviour — no harm done.
+    private async Task WarmupDhtAsync()
+    {
+        try
+        {
+            var prop = typeof(ClientEngine).GetProperty(
+                "DhtEngine",
+                BindingFlags.NonPublic | BindingFlags.Instance);
+            var dht = prop?.GetValue(_engine);
+            if (dht is null)
+            {
+                DebugLog.Info("DHT warmup: ClientEngine.DhtEngine not accessible via reflection — MonoTorrent may have renamed it");
+                return;
+            }
+            var t = dht.GetType();
+            var start = t.GetMethod(
+                "StartAsync",
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance,
+                binder: null, types: Type.EmptyTypes, modifiers: null);
+            if (start is null)
+            {
+                DebugLog.Info($"DHT warmup: no parameterless StartAsync() on {t.Name}");
+                return;
+            }
+            var stateProp = t.GetProperty("State");
+            var before = stateProp?.GetValue(dht);
+            DebugLog.Info($"DHT warmup: engine={t.Name} state={before} — calling StartAsync()");
+            var result = start.Invoke(dht, null);
+            if (result is Task task) await task;
+            var after = stateProp?.GetValue(dht);
+            DebugLog.Info($"DHT warmup: StartAsync completed, state now={after}");
+        }
+        catch (TargetInvocationException tie)
+        {
+            DebugLog.Error("DHT warmup", tie.InnerException ?? tie);
+        }
+        catch (Exception ex)
+        {
+            DebugLog.Error("DHT warmup", ex);
+        }
+    }
+
     private async Task StartNextIfSlotFreeAsync()
     {
         // Start "wanted" torrents (Paused=false in our record) that aren't currently downloading,
@@ -871,18 +1051,25 @@ public sealed class TorrentService : IAsyncDisposable
         _persistedByManager.Values.Any(v =>
             string.Equals(v.Source, source, StringComparison.OrdinalIgnoreCase));
 
-    // Short retry loop for the race window between engine.RemoveAsync completing and
-    // MonoTorrent's async info-hash cleanup finishing. Duplicates are caught by
-    // IsAlreadyTracked() upstream, so anything reaching here is a genuine race.
+    // Retry loop for the race window between engine.RemoveAsync completing and MonoTorrent's
+    // async InfoHash cleanup finishing — the manager reference is gone (RemoveAsync polls
+    // that), but the internal hash-lookup table lags. On fast Add-Remove-Add cycles the old
+    // 4-attempt / ~1.5 s budget was too tight; the user hit the "already been registered"
+    // error and had to click Add several times before it stuck. Bumped to 8 attempts with
+    // an explicit backoff table topping out at ~10 s — long enough to outlast any realistic
+    // internal cleanup, still short enough that a real permission or corrupt-file failure
+    // surfaces before the user gives up. Duplicates by user-visible source (path / URI)
+    // are caught upstream by IsAlreadyTracked, so anything reaching here is a genuine race.
+    private static readonly int[] AddRetryBackoffsMs = new[] { 200, 400, 800, 1200, 1800, 2500, 3200 };
     private static async Task<TorrentManager> AddWithRetryAsync(Func<Task<TorrentManager>> add)
     {
-        const int maxAttempts = 4;
-        for (int i = 1; i < maxAttempts; i++)
+        for (int i = 0; i < AddRetryBackoffsMs.Length; i++)
         {
             try { return await add(); }
             catch (Exception ex) when (IsAlreadyRegistered(ex))
             {
-                await Task.Delay(250 * i); // 250, 500, 750 — total ~1.5s
+                DebugLog.Info($"AddWithRetry: 'already registered' on attempt {i + 1}, waiting {AddRetryBackoffsMs[i]} ms");
+                await Task.Delay(AddRetryBackoffsMs[i]);
             }
         }
         return await add(); // final attempt: surface any remaining exception to the caller

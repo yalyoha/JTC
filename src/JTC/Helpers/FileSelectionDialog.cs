@@ -148,6 +148,13 @@ public static class FileSelectionDialog
             CloseButtonText = "Отмена",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = xamlRoot,
+            // FullSizeDesired stretches the dialog to the parent window's full available
+            // area — without it, on a non-maximised window (default 1000×640) the dialog's
+            // content region collapses to ~400 px tall and the ScrollViewer below its
+            // MaxHeight, so long file lists look clipped. The scrollbar still works, but
+            // users read the shortened list as "some files are missing". FullSizeDesired
+            // is the WinUI-idiomatic switch for long content dialogs.
+            FullSizeDesired = true,
         };
 
         // Wire event handlers AFTER dialog exists so the closures can reference it safely.
